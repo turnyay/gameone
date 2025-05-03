@@ -35,9 +35,24 @@ class HexTile extends Phaser.GameObjects.Container {
 
   private getNeighboringTiles(): {x: number, y: number}[] {
     const neighbors: {x: number, y: number}[] = [];
-    const directions = [
-      {x: 1, y: 0}, {x: 1, y: -1}, {x: 0, y: -1},
-      {x: -1, y: 0}, {x: -1, y: 1}, {x: 0, y: 1}
+    const isEvenRow = this.tileIndexX % 2 === 0;
+    
+    // For a hexagonal grid, each tile has 6 neighbors
+    // The pattern alternates between even and odd rows
+    const directions = isEvenRow ? [
+      {x: 1, y: 0},    // right
+      {x: 0, y: 1},    // bottom
+      {x: -1, y: 0},   // left
+      {x: 0, y: -1},   // top
+      {x: 1, y: -1},   // top-right
+      {x: -1, y: -1}   // top-left
+    ] : [
+      {x: 1, y: 0},    // right
+      {x: 0, y: 1},    // bottom
+      {x: -1, y: 0},   // left
+      {x: 0, y: -1},   // top
+      {x: 1, y: 1},    // bottom-right
+      {x: -1, y: 1}    // bottom-left
     ];
     
     for (const dir of directions) {
@@ -100,6 +115,8 @@ class HexTile extends Phaser.GameObjects.Container {
     this.scene.tweens.killTweensOf(this.hex);
     // Remove click handler when clearing selection
     this.hex.off('pointerdown', this.onTileClick, this);
+    // Remove any stroke style
+    this.hex.setStrokeStyle(0);
   }
 
   private updateResourceText(): void {
@@ -155,8 +172,20 @@ class HexTile extends Phaser.GameObjects.Container {
         ) as HexTile;
 
         if (neighborTile) {
-          HexTile.validMoveTiles.add(neighborTile);
-          neighborTile.startValidMoveAnimation();
+          // Check if the neighbor is a white tile
+          const neighborKey = `${neighbor.x},${neighbor.y}`;
+          let isNeighborWhite = true;
+          for (const [_, playerData] of Array.from(HexTile.players)) {
+            if (playerData.tiles.has(neighborKey)) {
+              isNeighborWhite = false;
+              break;
+            }
+          }
+          
+          if (isNeighborWhite) {
+            HexTile.validMoveTiles.add(neighborTile);
+            neighborTile.startValidMoveAnimation();
+          }
         }
       }
     } else if (isWhiteTile && HexTile.selectedTile && HexTile.validMoveTiles.has(this)) {
