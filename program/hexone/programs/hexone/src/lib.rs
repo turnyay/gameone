@@ -23,8 +23,12 @@ pub mod hexone {
         instructions::create_platform(ctx)
     }
 
-    pub fn create_player(ctx: Context<CreatePlayer>) -> Result<()> {
-        instructions::create_player(ctx)
+    pub fn create_player(ctx: Context<CreatePlayer>, name: [u8; 32]) -> Result<()> {
+        instructions::create_player(ctx, name)
+    }
+
+    pub fn join_game(ctx: Context<JoinGame>) -> Result<()> {
+        instructions::join_game(ctx)
     }
 }
 

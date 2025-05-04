@@ -11,7 +11,7 @@ pub struct CreatePlatform<'info> {
         init,
         payer = admin,
         space = Platform::LEN,
-        seeds = [b"hexone"],
+        seeds = [b"platform"],
         bump
     )]
     pub platform: Account<'info, Platform>,

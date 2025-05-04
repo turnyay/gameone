@@ -1,53 +1,78 @@
 use anchor_lang::prelude::*;
-
-// use crate::error::HexoneError;
-use crate::constants::*;
-use crate::state::*;
+use crate::state::game::Game;
+use crate::state::platform::Platform;
+use crate::error::HexoneError;
 
 #[derive(Accounts)]
 pub struct CreateGame<'info> {
     #[account(mut)]
-    pub user: Signer<'info>,
+    pub admin: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"platform"],
+        bump,
+        constraint = platform.admin == admin.key() @ HexoneError::Unauthorized
+    )]
+    pub platform: Account<'info, Platform>,
+
     #[account(
         init,
-        payer = user,
-        space = Game::LEN
+        payer = admin,
+        space = Game::LEN,
+        seeds = [b"GAME-", platform.game_count.to_le_bytes().as_ref()],
+        bump
     )]
-    pub game: Account<'info, Game>,
-    pub rent: Sysvar<'info, Rent>,
+    pub game: AccountLoader<'info, Game>,
+
     pub system_program: Program<'info, System>,
 }
 
-pub fn create_game(
-    ctx: Context<CreateGame>
-) -> Result<()> {
-    // Initialize the game account
-    let game = &mut ctx.accounts.game;
-    let columns = 13;
+pub fn create_game(ctx: Context<CreateGame>) -> Result<()> {
+    let game = &mut ctx.accounts.game.load_init()?;
+    let platform = &mut ctx.accounts.platform;
 
-    game.admin = ctx.accounts.user.key();
-    // game.player_1 = ctx.accounts.user.key();
-    // game.player_2 = ctx.accounts.user.key();
-    // game.player_3 = ctx.accounts.user.key();
-    // game.player_4 = ctx.accounts.user.key();
+    // Set admin
+    game.admin = ctx.accounts.admin.key();
 
-    game.game_state = 0;
-    game.resources_per_minute = 0;
+    // Set game dimensions
     game.rows = 11;
-    game.columns = columns;
-    game.tile_data = [TileData { tile_owner: 0, resource_count: 0 }; 256];
+    game.columns = 13;
 
-    // Set tile 0,0 to red (1)
-    game.tile_data[0 * columns as usize + 0] = TileData { tile_owner: 1, resource_count: DEFAULT_RESOURCE_COUNT };
+    // Store local variables for calculations
+    let rows = game.rows as usize;
+    let columns = game.columns as usize;
 
-    // Set tile 12,0 to yellow (2) 
-    game.tile_data[0 * columns as usize + 12] = TileData { tile_owner: 2, resource_count: DEFAULT_RESOURCE_COUNT };
+    // Initialize tile data
+    for i in 0..game.tile_data.len() {
+        game.tile_data[i].color = 0;
+        game.tile_data[i].resource_count = 0;
+    }
 
-    // Set tile 0,10 to blue (3)
-    game.tile_data[10 * columns as usize + 0] = TileData { tile_owner: 3, resource_count: DEFAULT_RESOURCE_COUNT };
+    // Set initial tiles for each player
+    // Red (color 1) - top left
+    game.tile_data[0].color = 1;
+    game.tile_data[0].resource_count = 100;
 
-    // Set tile 12,10 to green (4)
-    game.tile_data[10 * columns as usize + 12] = TileData { tile_owner: 4, resource_count: DEFAULT_RESOURCE_COUNT };
-    
+    // Yellow (color 2) - top right
+    game.tile_data[columns - 1].color = 2;
+    game.tile_data[columns - 1].resource_count = 100;
+
+    // Blue (color 3) - bottom left
+    game.tile_data[(rows - 1) * columns].color = 3;
+    game.tile_data[(rows - 1) * columns].resource_count = 100;
+
+    // Green (color 4) - bottom right
+    game.tile_data[(rows * columns) - 1].color = 4;
+    game.tile_data[(rows * columns) - 1].resource_count = 100;
+
+    // Initialize game state
+    game.game_state = 0;
+    game.version = 1;
+    game.bump = ctx.bumps.game;
+
+    // Increment platform game count
+    platform.game_count += 1;
+
     Ok(())
 }
