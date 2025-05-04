@@ -8,9 +8,9 @@ describe("hexone", () => {
 
   const program = anchor.workspace.hexone as Program<Hexone>;
 
-  it("Is initialized!", async () => {
+  it("Is create_game!", async () => {
     // Add your test here.
-    const tx = await program.methods.initialize().rpc();
-    console.log("Your transaction signature", tx);
+    const tx = await program.methods.create_game().rpc();
+    console.log("Your create_game transaction signature", tx);
   });
 });
