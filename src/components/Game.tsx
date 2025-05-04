@@ -26,7 +26,7 @@ class HexTile extends Phaser.GameObjects.Container {
   private gridSizeRows: number;
   private static playerColorIndex: number = 0;
   private isSelected: boolean = false;
-  private static selectedTile: HexTile | null = null;
+  public static selectedTile: HexTile | null = null;
   private static validMoveTiles: Set<HexTile> = new Set();
 
   public static setPlayerColorIndex(index: number) {
@@ -85,8 +85,17 @@ class HexTile extends Phaser.GameObjects.Container {
     this.hex.setTo(hoverPoints);
     this.hex.setInteractive(new Phaser.Geom.Polygon(hoverPoints), Phaser.Geom.Polygon.Contains);
 
-    // Add a glow effect without pulsing
-    this.hex.setStrokeStyle(2, 0xffffff);
+    // Add a more prominent glow effect for selected tile
+    this.hex.setStrokeStyle(4, 0xffffff);
+  }
+
+  private clearSelection(): void {
+    this.hex.clearFX();
+    this.hex.setTo(this.originalPoints);
+    this.hex.setInteractive(new Phaser.Geom.Polygon(this.originalPoints), Phaser.Geom.Polygon.Contains);
+    this.scene.tweens.killTweensOf(this.hex);
+    // Remove any stroke style
+    this.hex.setStrokeStyle(2, 0xffffff); // Keep the player tile highlight
   }
 
   private startValidMoveAnimation(): void {
@@ -108,15 +117,17 @@ class HexTile extends Phaser.GameObjects.Container {
     this.hex.on('pointerdown', this.onTileClick, this);
   }
 
-  private clearSelection(): void {
-    this.hex.clearFX();
-    this.hex.setTo(this.originalPoints);
-    this.hex.setInteractive(new Phaser.Geom.Polygon(this.originalPoints), Phaser.Geom.Polygon.Contains);
-    this.scene.tweens.killTweensOf(this.hex);
-    // Remove click handler when clearing selection
-    this.hex.off('pointerdown', this.onTileClick, this);
-    // Remove any stroke style
-    this.hex.setStrokeStyle(0);
+  private clearValidMoves(): void {
+    HexTile.validMoveTiles.forEach(tile => {
+      tile.hex.clearFX();
+      tile.hex.setTo(tile.originalPoints);
+      tile.hex.setInteractive(new Phaser.Geom.Polygon(tile.originalPoints), Phaser.Geom.Polygon.Contains);
+      tile.scene.tweens.killTweensOf(tile.hex);
+      tile.hex.setStrokeStyle(0);
+      // Remove click handler from valid move tiles
+      tile.hex.off('pointerdown', tile.onTileClick, tile);
+      HexTile.validMoveTiles.delete(tile);
+    });
   }
 
   private updateResourceText(): void {
@@ -142,20 +153,18 @@ class HexTile extends Phaser.GameObjects.Container {
     }
 
     if (isPlayerTile) {
-      // Clear previous selection
-      if (HexTile.selectedTile) {
-        HexTile.selectedTile.clearSelection();
-        // Clear valid move tiles
-        HexTile.validMoveTiles.forEach(tile => {
-          tile.clearSelection();
-        });
-        HexTile.validMoveTiles.clear();
-      }
-
-      // If clicking the same tile, deselect it
+      // If clicking the same tile, toggle selection
       if (HexTile.selectedTile === this) {
+        this.clearSelection();
+        this.clearValidMoves();
         HexTile.selectedTile = null;
         return;
+      }
+
+      // Clear previous selection and valid moves
+      if (HexTile.selectedTile) {
+        HexTile.selectedTile.clearSelection();
+        this.clearValidMoves();
       }
 
       // Select this tile
@@ -192,10 +201,17 @@ class HexTile extends Phaser.GameObjects.Container {
       // Handle territory expansion
       const selectedTile = HexTile.selectedTile;
       
-      // Only proceed if the selected tile has resources
-      if (selectedTile.resources > 0) {
-        // Subtract 1 from selected tile's resources
-        selectedTile.resources--;
+      // Only proceed if the selected tile has more than 1 resource
+      if (selectedTile.resources > 1) {
+        // Get the moveAllResources setting from the game instance
+        const gameInstance = this.scene.game as any;
+        const moveAllResources = gameInstance.config.moveAllResources ?? true;
+
+        // Calculate resources to move, ensuring at least 1 remains
+        const resourcesToMove = moveAllResources ? selectedTile.resources - 1 : 1;
+        
+        // Subtract resources from selected tile
+        selectedTile.resources -= resourcesToMove;
         selectedTile.updateResourceText();
 
         // Add this tile to player's territory
@@ -208,8 +224,13 @@ class HexTile extends Phaser.GameObjects.Container {
           
           // Update tile color and resources
           const colors = [0xff0000, 0xffff00, 0x00ff00, 0x0000ff];
-          this.hex.setFillStyle(colors[HexTile.playerColorIndex]);
-          this.resources = 1;
+          const playerColor = colors[HexTile.playerColorIndex];
+          
+          // Update the hex color
+          this.hex.clearFX();
+          this.hex.setTo(this.originalPoints);
+          this.hex.setFillStyle(playerColor);
+          this.resources = resourcesToMove;
 
           // Update or create resource text
           const hexWidth = this.hexSize * 2;
@@ -217,10 +238,10 @@ class HexTile extends Phaser.GameObjects.Container {
           const textColor = HexTile.playerColorIndex === 0 || HexTile.playerColorIndex === 3 ? '#ffffff' : '#000000';
 
           if (this.resourceText) {
-            this.resourceText.setText('1');
+            this.resourceText.setText(this.resources.toString());
             this.resourceText.setColor(textColor);
           } else {
-            this.resourceText = this.scene.add.text(0, 0, '1', {
+            this.resourceText = this.scene.add.text(0, 0, this.resources.toString(), {
               color: textColor,
               fontSize: '18px',
               fontFamily: 'Arial',
@@ -235,23 +256,18 @@ class HexTile extends Phaser.GameObjects.Container {
             this.add(this.resourceText);
           }
 
-          // Force a redraw of the hex
-          this.hex.clearFX();
-          this.hex.setTo(this.originalPoints);
-          this.hex.setFillStyle(colors[HexTile.playerColorIndex]);
-
           // Clear selection and valid moves
           selectedTile.clearSelection();
-          HexTile.validMoveTiles.forEach(tile => {
-            tile.clearSelection();
-          });
-          HexTile.validMoveTiles.clear();
+          this.clearValidMoves();
           HexTile.selectedTile = null;
 
           // Add selection capability to the new tile
           this.hex.on('pointerover', this.onHover, this);
           this.hex.on('pointerout', this.onHoverOut, this);
           this.hex.on('pointerdown', this.onTileClick, this);
+
+          // Add highlight effect for player's tiles
+          this.hex.setStrokeStyle(2, 0xffffff);
         }
       }
     }
@@ -266,7 +282,17 @@ class HexTile extends Phaser.GameObjects.Container {
     this.hexSize = size;
     this.gridSizeColumns = gridSizeColumns;
     this.gridSizeRows = gridSizeRows;
-    this.isTarget = (tileIndexX === 6 && tileIndexY === 5);
+    
+    // Check if this is one of the 7 target tiles
+    this.isTarget = (
+      (tileIndexX === 5 && tileIndexY === 4) ||
+      (tileIndexX === 6 && tileIndexY === 4) ||
+      (tileIndexX === 7 && tileIndexY === 4) ||
+      (tileIndexX === 5 && tileIndexY === 5) ||
+      (tileIndexX === 6 && tileIndexY === 5) ||
+      (tileIndexX === 7 && tileIndexY === 5) ||
+      (tileIndexX === 6 && tileIndexY === 6)
+    );
 
     // Set initial resources for colored tiles
     if ((tileIndexX === 0 && tileIndexY === 0) || // Top-left (red)
@@ -338,7 +364,6 @@ class HexTile extends Phaser.GameObjects.Container {
 
     // Add hex to container
     this.add(this.hex);
-    // this.add(this.border);
 
     // Add resource text if the tile has resources
     if (this.resources > 0) {
@@ -348,12 +373,12 @@ class HexTile extends Phaser.GameObjects.Container {
         fontFamily: 'Arial',
         fontStyle: 'bold',
         align: 'center',
-        resolution: 2 // Higher resolution for sharper text
+        resolution: 2
       });
       this.resourceText.setOrigin(0.5, 0.5);
-      this.resourceText.setDepth(10); // Ensure text is above everything
-      this.resourceText.setPosition(-hexWidth/2, -hexHeight/2); // Center in container
-      this.resourceText.setScale(1); // Start with clean scale
+      this.resourceText.setDepth(10);
+      this.resourceText.setPosition(-hexWidth/2, -hexHeight/2);
+      this.resourceText.setScale(1);
       this.add(this.resourceText);
     }
 
@@ -379,44 +404,107 @@ class HexTile extends Phaser.GameObjects.Container {
   }
 
   private startTargetAnimation(): void {
-    // Set a vibrant orange-gold color for the target tile
-    this.hex.setFillStyle(0xffa500);
+    // Check if this is the center tile
+    const isCenterTile = this.tileIndexX === 6 && this.tileIndexY === 5;
 
-    // Create a pulsing effect
-    this.scene.tweens.add({
-      targets: this.hex,
-      scaleX: 1.1,
-      scaleY: 1.1,
-      x: 2,
-      y: 2,
-      duration: 1000,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut'
-    });
+    if (isCenterTile) {
+      // Lighter blue diamond color
+      this.hex.setFillStyle(0x87CEEB);
+      
+      // Create a pulsing effect
+      this.scene.tweens.add({
+        targets: this.hex,
+        scaleX: 1.1,
+        scaleY: 1.1,
+        x: 2,
+        y: 2,
+        duration: 1000,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut'
+      });
 
-    // Add a glow effect
-    this.hex.setStrokeStyle(2, 0xff8c00);
+      // Add a crystalline glow effect
+      this.hex.setStrokeStyle(2, 0xB0E0E6);
+      
+      // Create diamond shine effect
+      const shine = this.scene.add.polygon(0, 0, this.originalPoints, 0xFFFFFF, 0.4);
+      this.add(shine);
+      shine.setDepth(1);
 
-    // Create shiny effect
-    const shine = this.scene.add.polygon(0, 0, this.originalPoints, 0xffffff, 0.3);
-    this.add(shine);
-    shine.setDepth(1);
+      // Animate the shine with a more crystalline pattern
+      this.scene.tweens.add({
+        targets: shine,
+        x: this.hexSize * 2,
+        y: -this.hexSize * 2,
+        duration: 2000,
+        repeat: -1,
+        ease: 'Linear',
+        onUpdate: () => {
+          // Update shine opacity based on position for a more crystalline effect
+          const progress = (shine.x + shine.y) / (this.hexSize * 4);
+          shine.setAlpha(0.4 * (1 - Math.abs(progress - 0.5) * 2));
+        }
+      });
 
-    // Animate the shine
-    this.scene.tweens.add({
-      targets: shine,
-      x: this.hexSize * 2,
-      y: -this.hexSize * 2,
-      duration: 1500,
-      repeat: -1,
-      ease: 'Linear',
-      onUpdate: () => {
-        // Update shine opacity based on position
-        const progress = (shine.x + shine.y) / (this.hexSize * 4);
-        shine.setAlpha(0.3 * (1 - Math.abs(progress - 0.5) * 2));
-      }
-    });
+      // Add additional sparkle effect
+      const sparkle = this.scene.add.polygon(0, 0, this.originalPoints, 0xB0E0E6, 0.2);
+      this.add(sparkle);
+      sparkle.setDepth(1);
+
+      // Animate the sparkle in the opposite direction
+      this.scene.tweens.add({
+        targets: sparkle,
+        x: -this.hexSize * 2,
+        y: this.hexSize * 2,
+        duration: 1500,
+        repeat: -1,
+        ease: 'Linear',
+        onUpdate: () => {
+          const progress = (sparkle.x + sparkle.y) / (this.hexSize * 4);
+          sparkle.setAlpha(0.2 * (1 - Math.abs(progress - 0.5) * 2));
+        }
+      });
+    } else {
+      // Regular target tile appearance
+      this.hex.setFillStyle(0xffa500);
+
+      // Create a pulsing effect
+      this.scene.tweens.add({
+        targets: this.hex,
+        scaleX: 1.1,
+        scaleY: 1.1,
+        x: 2,
+        y: 2,
+        duration: 1000,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut'
+      });
+
+      // Add a glow effect
+      this.hex.setStrokeStyle(2, 0xff8c00);
+
+      // Create shiny effect
+      const shine = this.scene.add.polygon(0, 0, this.originalPoints, 0xffffff, 0.3);
+      this.add(shine);
+      shine.setDepth(1);
+
+      // Animate the shine
+      this.scene.tweens.add({
+        targets: shine,
+        x: this.hexSize * 2,
+        y: -this.hexSize * 2,
+        duration: 1500,
+        repeat: -1,
+        ease: 'Linear',
+        onUpdate: () => {
+          // Update shine opacity based on position
+          const progress = (shine.x + shine.y) / (this.hexSize * 4);
+          shine.setAlpha(0.3 * (1 - Math.abs(progress - 0.5) * 2));
+        }
+      });
+    }
   }
 
   public static initializePlayers(gridSizeRows: number, gridSizeColumns: number) {
@@ -487,9 +575,16 @@ class HexTile extends Phaser.GameObjects.Container {
   }
 
   public destroy(): void {
+    // Remove all event listeners before destroying
     this.hex.off('pointerover', this.onHover, this);
     this.hex.off('pointerout', this.onHoverOut, this);
+    this.hex.off('pointerdown', this.onTileClick, this);
     super.destroy();
+  }
+
+  public addResources(amount: number): void {
+    this.resources += amount;
+    this.updateResourceText();
   }
 }
 
@@ -564,7 +659,43 @@ class MainScene extends Phaser.Scene {
 
 const Game: React.FC = () => {
   const gameRef = useRef<Phaser.Game | null>(null);
-  const [playerColorIndex, setPlayerColorIndex] = React.useState(0); // 0: red, 1: yellow, 2: green, 3: blue
+  const [playerColorIndex, setPlayerColorIndex] = React.useState(0);
+  const [moveAllResources, setMoveAllResources] = React.useState(true);
+  const [buttonStates, setButtonStates] = React.useState({
+    addResources: false
+  });
+  const [availableResources, setAvailableResources] = React.useState(0);
+  const [countdownSeconds, setCountdownSeconds] = React.useState(60);
+
+  // Countdown timer effect
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCountdownSeconds(prev => {
+        if (prev <= 1) {
+          setAvailableResources(current => current + 10);
+          return 60;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const handleButtonClick = (buttonName: keyof typeof buttonStates) => {
+    setButtonStates(prev => ({ ...prev, [buttonName]: true }));
+    setTimeout(() => {
+      setButtonStates(prev => ({ ...prev, [buttonName]: false }));
+    }, 150);
+  };
+
+  const handleAddResources = () => {
+    if (availableResources > 0 && HexTile.selectedTile) {
+      // Add resources to the selected tile
+      HexTile.selectedTile.addResources(availableResources);
+      setAvailableResources(0);
+    }
+  };
 
   const getColorFromIndex = (index: number) => {
     const colors = [0xff0000, 0xffff00, 0x00ff00, 0x0000ff];
@@ -582,7 +713,7 @@ const Game: React.FC = () => {
     // Set the player's color index in the HexTile class
     HexTile.setPlayerColorIndex(playerColorIndex);
 
-    const config: Phaser.Types.Core.GameConfig = {
+    const config = {
       type: Phaser.AUTO,
       parent: 'game-container',
       width: '712',
@@ -598,11 +729,12 @@ const Game: React.FC = () => {
       roundPixels: true,
       audio: {
         disableWebAudio: true
-      }
-    };
+      },
+      moveAllResources: moveAllResources // Add the setting to the game config
+    } as Phaser.Types.Core.GameConfig & { moveAllResources: boolean };
 
     gameRef.current = new Phaser.Game(config);
-  }, [playerColorIndex]);
+  }, [playerColorIndex, moveAllResources]); // Add moveAllResources to dependencies
 
   useEffect(() => {
     initGame();
@@ -619,10 +751,10 @@ const Game: React.FC = () => {
     <div style={{ 
       display: 'flex', 
       width: '100%', 
-      height: 'calc(100vh - 48px)', // Subtract tab height
+      height: 'calc(100vh - 48px)',
       backgroundColor: '#1a1a1a',
       position: 'fixed',
-      top: '48px', // Start after tab
+      top: '48px',
       left: 0,
       right: 0,
       bottom: 0,
@@ -647,72 +779,193 @@ const Game: React.FC = () => {
         color: '#fff',
         borderRight: '1px solid #333'
       }}>
-        <h2 style={{ marginBottom: '20px' }}>My Profile</h2>
-        <div style={{ 
-          display: 'flex', 
-          flexDirection: 'column', 
-          gap: '10px',
-          marginBottom: '20px'
-        }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px'
-          }}>
-            <div style={{
-              width: '20px',
-              height: '20px',
-              backgroundColor: `#${getColorFromIndex(playerColorIndex).toString(16).padStart(6, '0')}`,
-              borderRadius: '4px'
-            }} />
-            <span>You are the {getColorName(playerColorIndex)} color</span>
-          </div>
-        </div>
-        <h3 style={{ marginBottom: '20px' }}>Actions</h3>
+        <h2 style={{ marginBottom: '20px' }}>Actions</h2>
         <div style={{ 
           display: 'flex', 
           flexDirection: 'column', 
           gap: '10px' 
         }}>
-          <button style={{
-            padding: '10px',
-            backgroundColor: '#2a2a2a',
-            border: '1px solid #444',
-            color: '#fff',
-            borderRadius: '4px',
-            cursor: 'pointer'
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '10px',
+            marginBottom: '10px'
           }}>
-            Action 1
+            <input
+              type="checkbox"
+              checked={moveAllResources}
+              onChange={(e) => setMoveAllResources(e.target.checked)}
+              style={{
+                width: '16px',
+                height: '16px',
+                cursor: 'pointer'
+              }}
+            />
+            <span>Move all resources</span>
+          </div>
+          <button 
+            onClick={() => {
+              handleButtonClick('addResources');
+              handleAddResources();
+            }}
+            disabled={!HexTile.selectedTile || availableResources === 0}
+            style={{
+              padding: '10px',
+              backgroundColor: !HexTile.selectedTile || availableResources === 0 ? '#666' : 
+                buttonStates.addResources ? '#008000' : '#006400',
+              border: '1px solid #444',
+              color: '#fff',
+              borderRadius: '4px',
+              cursor: !HexTile.selectedTile || availableResources === 0 ? 'not-allowed' : 'pointer',
+              transition: 'background-color 0.15s ease',
+              transform: buttonStates.addResources ? 'scale(0.98)' : 'scale(1)',
+              opacity: !HexTile.selectedTile || availableResources === 0 ? 0.5 : 1
+            }}
+            onMouseEnter={(e) => {
+              if (!buttonStates.addResources && HexTile.selectedTile && availableResources > 0) {
+                e.currentTarget.style.backgroundColor = '#008000';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!buttonStates.addResources && HexTile.selectedTile && availableResources > 0) {
+                e.currentTarget.style.backgroundColor = '#006400';
+              }
+            }}
+          >
+            Add Resources
           </button>
-          <button style={{
-            padding: '10px',
-            backgroundColor: '#2a2a2a',
-            border: '1px solid #444',
-            color: '#fff',
-            borderRadius: '4px',
-            cursor: 'pointer'
+        </div>
+
+        <div style={{ margin: '30px 0' }}>
+          <h2 style={{ marginBottom: '20px' }}>Resources Available</h2>
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: '10px',
+            marginBottom: '20px',
+            fontFamily: 'monospace',
+            fontSize: '14px'
           }}>
-            Action 2
-          </button>
-          <button style={{
-            padding: '10px',
-            backgroundColor: '#2a2a2a',
-            border: '1px solid #444',
-            color: '#fff',
-            borderRadius: '4px',
-            cursor: 'pointer'
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ color: '#888' }}>Resources:</span>
+              <span style={{ color: '#ffa500' }}>{availableResources}</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ color: '#888' }}>More resources in:</span>
+              <span style={{ color: '#ffa500' }}>{countdownSeconds} seconds</span>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ margin: '30px 0' }}>
+          <h2 style={{ marginBottom: '20px' }}>Game Info</h2>
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: '10px',
+            marginBottom: '20px',
+            fontFamily: 'monospace',
+            fontSize: '14px'
           }}>
-            Action 3
-          </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ color: '#888' }}>Game ID:</span>
+              <span style={{ color: '#ffa500' }}>9C6Mu...Wn1pG</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ color: '#888' }}>Game Prize Total:</span>
+              <span style={{ color: '#ffa500' }}>4.25345 SOL</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ color: '#888' }}>Target Life Remaining:</span>
+              <span style={{ color: '#ffa500' }}>427/1000</span>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ margin: '50px 0' }}>
+          <h2 style={{ marginBottom: '20px' }}>My Profile</h2>
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: '10px',
+            marginBottom: '20px',
+            fontFamily: 'monospace',
+            fontSize: '14px'
+          }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ color: '#888' }}>Player ID:</span>
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                gap: '8px' 
+              }}>
+                <div style={{
+                  width: '12px',
+                  height: '12px',
+                  backgroundColor: `#${getColorFromIndex(playerColorIndex).toString(16).padStart(6, '0')}`,
+                  borderRadius: '2px'
+                }} />
+                <span style={{ color: '#ffa500' }}>7xK9p...mN2vR</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ color: '#888' }}>Target Life Acquired:</span>
+              <span style={{ color: '#ffa500' }}>0/1000</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ color: '#888' }}>Percent Gameboard:</span>
+              <span style={{ color: '#ffa500' }}>0.73% (1/137)</span>
+            </div>
+          </div>
         </div>
       </div>
       <div style={{ 
-        width: '20%', 
+        width: '25%',
         height: '100%',
         padding: '20px',
         color: '#fff'
       }}>
-        <h2 style={{ marginBottom: '20px' }}>Chat</h2>
+        <h2 style={{ marginBottom: '20px' }}>Live Feed</h2>
+        <div style={{
+          backgroundColor: '#000000',
+          borderRadius: '4px',
+          padding: '10px 5px',
+          height: 'calc(100% - 200px)',
+          overflowY: 'auto',
+          fontFamily: 'monospace',
+          fontSize: '12px',
+          lineHeight: '1.5'
+        }}>
+          {(() => {
+            const now = new Date();
+            const formatTime = (date: Date) => {
+              return date.toLocaleTimeString('en-US', { 
+                hour12: false,
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+              });
+            };
+            return (
+              <>
+                <div style={{ color: '#ffa500', textAlign: 'left', paddingLeft: '0' }}>
+                  [{formatTime(now)}] Connected to Solana blockchain...
+                </div>
+                <div style={{ color: '#ffa500', textAlign: 'left', paddingLeft: '0' }}>
+                  [{formatTime(new Date(now.getTime() + 1000))}] Loaded game board ok
+                </div>
+                <div style={{ color: '#ffa500', textAlign: 'left', paddingLeft: '0' }}>
+                  [{formatTime(new Date(now.getTime() + 2000))}] Initialized player resources
+                </div>
+                <div style={{ color: '#ffa500', textAlign: 'left', paddingLeft: '0' }}>
+                  [{formatTime(new Date(now.getTime() + 3000))}] Ready for gameplay
+                </div>
+              </>
+            );
+          })()}
+        </div>
       </div>
     </div>
   );

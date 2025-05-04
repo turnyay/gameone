@@ -6,7 +6,7 @@ const App = memo(function App() {
   return (
     <div className="App">
       <header className="App-header">
-        <h1>GAMEONE</h1>
+        <h1>HEX<span style={{ color: '#ffa500' }}>ONE</span></h1>
       </header>
       <main className="game-container">
         <Game />
