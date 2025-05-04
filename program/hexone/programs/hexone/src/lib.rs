@@ -16,9 +16,13 @@ declare_id!("G99PsLJdkyfY9MgafG1SRBkucX9nqogYsyquPhgL9VkD");
 pub mod hexone {
     use super::*;
 
-    pub fn create_game(ctx: Context<CreateGame>) -> Result<()> {
+    pub fn create_game(
+        ctx: Context<CreateGame>
+    ) -> Result<()> {
         instructions::create_game(ctx)
     }
+
+    
 }
 
 

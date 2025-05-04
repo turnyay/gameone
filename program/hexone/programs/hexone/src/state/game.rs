@@ -20,11 +20,12 @@ pub struct Game {
 impl Game {
     pub const LEN: usize = ANCHOR_DISC_LEN
         + (32 * 5)                              // admin + 4 player pubkeys
-        + (256 * 3)                             // game tiles - u8 owner + u16 resource count 
-        + (5);                                  // bump/rows/columns/game state/resource per min
+        + (256 * 3)                             // game tiles - u32 resource count + Pubkey + u8 color
+        + 5                                     // game state + resources_per_minute + rows + columns + bump
+        + 83;                                   // balance size
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, Default)]
 pub struct TileData {
     pub tile_owner: u8,
     pub resource_count: u16,
