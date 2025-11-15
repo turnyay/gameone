@@ -91,12 +91,13 @@ const Games: React.FC = () => {
         const resourcesPerMinute = data.readUInt32LE(160);
         
         // Read tile_data (144 * 4 bytes)
-        const tileData: number[] = [];
+        // Each TileData is: color (u8) + _pad (u8) + resource_count (u16) = 4 bytes
+        const parsedTileData: Array<{ color: number; resourceCount: number }> = [];
         for (let i = 0; i < 144; i++) {
             const offset = 164 + (i * 4);
             const color = data.readUInt8(offset);
             const resourceCount = data.readUInt16LE(offset + 2);
-            tileData.push(color);
+            parsedTileData.push({ color, resourceCount });
         }
         
         // Read game state and other fields (5 bytes)
@@ -120,8 +121,8 @@ const Games: React.FC = () => {
           default:
             gameStateStr = `Unknown (${gameState})`;
         }
-        
-        const tilesCovered = tileData.filter(tile => tile !== 0).length;
+
+        const tilesCovered = parsedTileData.filter(tile => tile.color !== 0).length;
 
         const game: GameAccount = {
           publicKey: gamePda,
@@ -130,7 +131,11 @@ const Games: React.FC = () => {
           tilesCovered,
           totalTiles: rows * columns || 0,
           tilesCoveredPercent: rows * columns ? (tilesCovered / (rows * columns)) * 100 : 0,
-          cost: 0 // Cost is not stored in the game account
+          cost: 0, // Cost is not stored in the game account
+          tileData: parsedTileData,
+          rows,
+          columns,
+          resourcesPerMinute
         };
 
         console.log('Parsed game:', game);

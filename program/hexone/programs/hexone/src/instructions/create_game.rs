@@ -58,11 +58,11 @@ pub fn create_game(ctx: Context<CreateGame>) -> Result<()> {
     game.tile_data[columns - 1].color = 2;
     game.tile_data[columns - 1].resource_count = 100;
 
-    // Blue (color 3) - bottom left
+    // Green (color 3) - bottom left
     game.tile_data[(rows - 1) * columns].color = 3;
     game.tile_data[(rows - 1) * columns].resource_count = 100;
 
-    // Green (color 4) - bottom right
+    // Blue (color 4) - bottom right
     game.tile_data[(rows * columns) - 1].color = 4;
     game.tile_data[(rows * columns) - 1].resource_count = 100;
 

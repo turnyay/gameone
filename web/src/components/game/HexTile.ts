@@ -15,6 +15,7 @@ export class HexTile extends Phaser.GameObjects.Container {
   private offsetWidth: number;
   private offsetHeight: number;
   private resources: number;
+  private originalColorIndex: number | null = null; // Store the original player color index
 
   static players: Player[] = [];
   static playerColorIndex: number = 0;
@@ -97,13 +98,21 @@ export class HexTile extends Phaser.GameObjects.Container {
   startSelectionAnimation() {
     this.hex.setScale(this.hoverScale);
     this.hex.setStrokeStyle(2, COLORS.WHITE);
-    this.hex.setFillStyle(COLORS.GRAY);
+    // Keep the original color, just change stroke for selection highlight
+    // Don't change fill color if tile has a player color
   }
 
   clearSelection() {
     this.hex.setScale(1);
-    this.hex.setStrokeStyle(1, COLORS.GRAY);
-    this.hex.setFillStyle(COLORS.BLACK);
+    // Restore original color if tile has one, otherwise use default
+    if (this.originalColorIndex !== null) {
+      const color = PLAYER_COLORS[this.originalColorIndex];
+      this.hex.setFillStyle(color);
+      this.hex.setStrokeStyle(1, COLORS.WHITE);
+    } else {
+      this.hex.setFillStyle(COLORS.BLACK);
+      this.hex.setStrokeStyle(1, COLORS.GRAY);
+    }
   }
 
   startValidMoveAnimation() {
@@ -112,8 +121,15 @@ export class HexTile extends Phaser.GameObjects.Container {
   }
 
   clearValidMoves() {
-    this.hex.setStrokeStyle(1, COLORS.GRAY);
-    this.hex.setFillStyle(COLORS.BLACK);
+    // Restore original color if tile has one, otherwise use default
+    if (this.originalColorIndex !== null) {
+      const color = PLAYER_COLORS[this.originalColorIndex];
+      this.hex.setFillStyle(color);
+      this.hex.setStrokeStyle(1, COLORS.WHITE);
+    } else {
+      this.hex.setFillStyle(COLORS.BLACK);
+      this.hex.setStrokeStyle(1, COLORS.GRAY);
+    }
   }
 
   onTileClick() {
@@ -121,18 +137,29 @@ export class HexTile extends Phaser.GameObjects.Container {
       // Handle territory expansion
       HexTile.setPlayerColorIndex(HexTile.playerColorIndex);
       HexTile.addTileToPlayer(this);
+      // Set the color for the newly claimed tile
+      this.setColor(HexTile.playerColorIndex);
       HexTile.selectedTile?.clearSelection();
       HexTile.selectedTile = null;
+      // Clear valid move highlights on all neighboring tiles
+      HexTile.validMoveTiles.forEach(tile => tile.clearValidMoves());
       HexTile.validMoveTiles.clear();
     } else if (HexTile.players[HexTile.playerColorIndex].tiles.has(`${this.tileIndexX},${this.tileIndexY}`)) {
       // Handle player tile selection
       if (HexTile.selectedTile === this) {
+        // Unselecting: clear selection and remove highlights from neighbors
         this.clearSelection();
         HexTile.selectedTile = null;
+        // Clear valid move highlights on all neighboring tiles
+        HexTile.validMoveTiles.forEach(tile => tile.clearValidMoves());
         HexTile.validMoveTiles.clear();
       } else {
+        // Selecting a new tile: clear previous selection and show valid moves
         if (HexTile.selectedTile) {
           HexTile.selectedTile.clearSelection();
+          // Clear previous valid move highlights
+          HexTile.validMoveTiles.forEach(tile => tile.clearValidMoves());
+          HexTile.validMoveTiles.clear();
         }
         this.startSelectionAnimation();
         HexTile.selectedTile = this;
@@ -154,14 +181,24 @@ export class HexTile extends Phaser.GameObjects.Container {
   onHover() {
     if (!HexTile.validMoveTiles.has(this) && HexTile.selectedTile !== this) {
       this.hex.setScale(this.hoverScale);
-      this.hex.setStrokeStyle(1, COLORS.LIGHT_GRAY);
+      // Keep original color, just change stroke for hover
+      if (this.originalColorIndex !== null) {
+        this.hex.setStrokeStyle(1, COLORS.LIGHT_GRAY);
+      } else {
+        this.hex.setStrokeStyle(1, COLORS.LIGHT_GRAY);
+      }
     }
   }
 
   onHoverOut() {
     if (!HexTile.validMoveTiles.has(this) && HexTile.selectedTile !== this) {
       this.hex.setScale(1);
-      this.hex.setStrokeStyle(1, COLORS.GRAY);
+      // Restore original stroke color
+      if (this.originalColorIndex !== null) {
+        this.hex.setStrokeStyle(1, COLORS.WHITE);
+      } else {
+        this.hex.setStrokeStyle(1, COLORS.GRAY);
+      }
     }
   }
 
@@ -171,14 +208,33 @@ export class HexTile extends Phaser.GameObjects.Container {
   }
 
   static initializePlayers() {
-    HexTile.players = PLAYER_STARTING_POSITIONS.map((pos, index) => ({
-      colorIndex: index,
-      tiles: new Set([`${pos.x},${pos.y}`])
-    }));
+    // Initialize all 4 players, even if they don't have starting positions yet
+    HexTile.players = [];
+    for (let i = 0; i < 4; i++) {
+      HexTile.players[i] = {
+        colorIndex: i,
+        tiles: new Set()
+      };
+    }
+    // Add starting positions if they exist
+    PLAYER_STARTING_POSITIONS.forEach((pos, index) => {
+      if (HexTile.players[index]) {
+        HexTile.players[index].tiles.add(`${pos.x},${pos.y}`);
+      }
+    });
   }
 
   static addTileToPlayer(tile: HexTile) {
     HexTile.players[HexTile.playerColorIndex].tiles.add(`${tile.tileIndexX},${tile.tileIndexY}`);
+  }
+
+  setColor(colorIndex: number) {
+    if (colorIndex >= 0 && colorIndex < PLAYER_COLORS.length) {
+      this.originalColorIndex = colorIndex; // Store the original color
+      const color = PLAYER_COLORS[colorIndex];
+      this.hex.setFillStyle(color);
+      this.hex.setStrokeStyle(1, COLORS.WHITE);
+    }
   }
 
   addResources(amount: number) {

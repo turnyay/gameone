@@ -92,12 +92,13 @@ const Game: React.FC = () => {
       const resourcesPerMinute = data.readUInt32LE(160);
       
       // Read tile_data (144 * 4 bytes)
-      const tileData: number[] = [];
+      // Each TileData is: color (u8) + _pad (u8) + resource_count (u16) = 4 bytes
+      const tileData: Array<{ color: number; resourceCount: number }> = [];
       for (let i = 0; i < 144; i++) {
           const offset = 164 + (i * 4);
           const color = data.readUInt8(offset);
           const resourceCount = data.readUInt16LE(offset + 2);
-          tileData.push(color);
+          tileData.push({ color, resourceCount });
       }
       
       // Read game state and other fields (5 bytes)
@@ -122,7 +123,7 @@ const Game: React.FC = () => {
           gameStateStr = `Unknown (${gameState})`;
       }
       
-      const tilesCovered = tileData.filter(tile => tile !== 0).length;
+      const tilesCovered = tileData.filter(tile => tile.color !== 0).length;
 
       const gameData: GameAccount = {
         publicKey: gamePda,
@@ -131,7 +132,11 @@ const Game: React.FC = () => {
         tilesCovered,
         totalTiles: rows * columns || 0,
         tilesCoveredPercent: rows * columns ? (tilesCovered / (rows * columns)) * 100 : 0,
-        cost: 0 // Cost is not stored in the game account
+        cost: 0, // Cost is not stored in the game account
+        tileData,
+        rows,
+        columns,
+        resourcesPerMinute
       };
 
       console.log('Parsed game:', gameData);
@@ -150,7 +155,7 @@ const Game: React.FC = () => {
   };
 
   const initGame = useCallback(() => {
-    if (gameRef.current) return;
+    if (gameRef.current || !game) return;
     
     // Wait for the game container to be available
     const container = document.getElementById('game-container');
@@ -176,6 +181,9 @@ const Game: React.FC = () => {
     const gameWidth = (GRID_CONFIG.OFFSET_WIDTH + maxPixelX) * 2 + hexWidth;
     const gameHeight = (GRID_CONFIG.OFFSET_HEIGHT + maxPixelY) * 2 + hexHeight;
 
+    // Set game data in MainScene static variable before creating the game
+    MainScene.gameData = game;
+
     const config = {
       type: Phaser.AUTO,
       parent: 'game-container',
@@ -199,7 +207,7 @@ const Game: React.FC = () => {
     } as Phaser.Types.Core.GameConfig & { moveAllResources: boolean };
 
     gameRef.current = new Phaser.Game(config);
-  }, [playerColorIndex]); // Only depend on playerColorIndex, not moveAllResources
+  }, [playerColorIndex, game]); // Depend on game data as well
 
   useEffect(() => {
     // Initialize game immediately when component mounts and game data is loaded

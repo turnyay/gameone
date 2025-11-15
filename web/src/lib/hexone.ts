@@ -21,6 +21,11 @@ export interface Game {
   playerCount: number;
 }
 
+export interface TileData {
+  color: number; // 0 = unclaimed, 1-4 = player colors
+  resourceCount: number;
+}
+
 export interface GameAccount {
   publicKey: PublicKey;
   status: string;
@@ -29,6 +34,10 @@ export interface GameAccount {
   totalTiles: number;
   tilesCoveredPercent: number;
   cost: number;
+  tileData: TileData[]; // Array of 144 tiles with color and resource count
+  rows: number;
+  columns: number;
+  resourcesPerMinute: number;
 }
 
 export interface GameAccountData {
@@ -233,14 +242,37 @@ export class HexoneClient {
           const totalTiles = account.tileData.length;
           const tilesCoveredPercent = (tilesCovered / totalTiles) * 100;
 
+          // Parse tile data if available
+          const tileData: TileData[] = [];
+          if (account.tileData && Array.isArray(account.tileData)) {
+            // If tileData is already parsed, use it; otherwise create placeholder
+            account.tileData.forEach((tile: any) => {
+              if (typeof tile === 'object' && tile.color !== undefined) {
+                tileData.push({ color: tile.color, resourceCount: tile.resourceCount || 0 });
+              } else {
+                // Placeholder for unparsed data
+                tileData.push({ color: tile || 0, resourceCount: 0 });
+              }
+            });
+          } else {
+            // Create empty tile data array
+            for (let i = 0; i < 144; i++) {
+              tileData.push({ color: 0, resourceCount: 0 });
+            }
+          }
+
           games.push({
             publicKey: gamePda,
             status: this.getGameStatus(account.gameState),
-            players: account.players,
+            players: account.players || [],
             tilesCovered,
             totalTiles,
             tilesCoveredPercent,
-            cost: account.gameCost / 1e9, // Convert lamports to SOL
+            cost: account.gameCost ? account.gameCost / 1e9 : 0, // Convert lamports to SOL
+            tileData,
+            rows: account.rows || 11,
+            columns: account.columns || 13,
+            resourcesPerMinute: account.resourcesPerMinute || 0
           });
         } catch (error) {
           console.error(`Error fetching game ${i}:`, error);
@@ -261,9 +293,28 @@ export class HexoneClient {
       const game = await this.program.account.game.fetch(new PublicKey(gameId));
       const account = game as any;
       
+      // Parse tile data if available
+      const tileData: TileData[] = [];
+      if (account.tileData && Array.isArray(account.tileData)) {
+        // If tileData is already parsed, use it; otherwise create placeholder
+        account.tileData.forEach((tile: any) => {
+          if (typeof tile === 'object' && tile.color !== undefined) {
+            tileData.push({ color: tile.color, resourceCount: tile.resourceCount || 0 });
+          } else {
+            // Placeholder for unparsed data
+            tileData.push({ color: tile || 0, resourceCount: 0 });
+          }
+        });
+      } else {
+        // Create empty tile data array
+        for (let i = 0; i < 144; i++) {
+          tileData.push({ color: 0, resourceCount: 0 });
+        }
+      }
+
       // Calculate tiles covered from tileData array
-      const tilesCovered = account.tileData.filter((tile: any) => tile !== 0).length;
-      const totalTiles = account.tileData.length;
+      const tilesCovered = tileData.filter((tile) => tile.color !== 0).length;
+      const totalTiles = tileData.length;
       const tilesCoveredPercent = (tilesCovered / totalTiles) * 100;
 
       return {
@@ -279,7 +330,11 @@ export class HexoneClient {
         tilesCovered,
         totalTiles,
         tilesCoveredPercent,
-        cost: account.gameCost / 1e9, // Convert lamports to SOL
+        cost: account.gameCost ? account.gameCost / 1e9 : 0, // Convert lamports to SOL
+        tileData,
+        rows: account.rows || 11,
+        columns: account.columns || 13,
+        resourcesPerMinute: account.resourcesPerMinute || 0
       };
     } catch (error) {
       console.error('Error fetching game:', error);

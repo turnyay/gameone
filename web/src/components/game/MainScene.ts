@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { HexTile } from './HexTile';
 import { GRID_CONFIG } from './constants';
+import { GameAccount } from '../../lib/hexone';
 
 export class MainScene extends Phaser.Scene {
   private tiles: HexTile[][] = [];
@@ -11,9 +12,17 @@ export class MainScene extends Phaser.Scene {
   private lastWidth: number = 0;
   private lastHeight: number = 0;
   private gameBorder!: Phaser.GameObjects.Rectangle;
+  private gameData: GameAccount | null = null;
+
+  static gameData: GameAccount | null = null;
 
   constructor() {
     super({ key: 'MainScene' });
+  }
+
+  init(data: { gameData?: GameAccount }) {
+    // Try to get data from init, or fall back to static variable
+    this.gameData = data?.gameData || MainScene.gameData;
   }
 
   create() {
@@ -70,6 +79,10 @@ export class MainScene extends Phaser.Scene {
     this.tiles.forEach(row => row.forEach(tile => tile.destroy()));
     this.tiles = [];
 
+    // Get game dimensions from game data or use defaults
+    const rows = this.gameData?.rows || this.gridSizeRows;
+    const columns = this.gameData?.columns || this.gridSizeColumns;
+
     // Initialize new tiles array
     for (let y = 0; y < this.gridSizeRows; y++) {
       this.tiles[y] = [];
@@ -84,6 +97,11 @@ export class MainScene extends Phaser.Scene {
         const pixelX = x * (hexWidth * 0.5 + this.gap);
         const pixelY = y * (hexHeight * 0.75 + this.gap) + (x % 2 ? hexHeight * 0.375 : 0);
 
+        // Calculate tile index in the game's tile_data array
+        // The game uses a flat array indexed by row * columns + column
+        const tileIndex = y * columns + x;
+        const tileData = this.gameData?.tileData?.[tileIndex];
+
         const tile = new HexTile({
           scene: this,
           x: GRID_CONFIG.OFFSET_WIDTH + pixelX * 2,
@@ -95,6 +113,26 @@ export class MainScene extends Phaser.Scene {
           offsetWidth: GRID_CONFIG.OFFSET_WIDTH,
           offsetHeight: GRID_CONFIG.OFFSET_HEIGHT
         });
+
+        // Set tile color and resources from game data
+        if (tileData) {
+          if (tileData.color > 0 && tileData.color <= 4) {
+            // Color is 1-4, convert to 0-3 index
+            const colorIndex = tileData.color - 1;
+            tile.setColor(colorIndex);
+            // Add tile to player's territory
+            if (!HexTile.players[colorIndex]) {
+              HexTile.players[colorIndex] = {
+                colorIndex,
+                tiles: new Set()
+              };
+            }
+            HexTile.players[colorIndex].tiles.add(`${x},${y}`);
+          }
+          if (tileData.resourceCount > 0) {
+            tile.addResources(tileData.resourceCount);
+          }
+        }
 
         this.tiles[y][x] = tile;
       }
