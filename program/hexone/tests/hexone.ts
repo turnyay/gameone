@@ -5,7 +5,7 @@ import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
 import { expect } from "chai";
 
 // Program ID from Anchor.toml
-const PROGRAM_ID = new PublicKey("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
+const PROGRAM_ID = new PublicKey("G99PsLJdkyfY9MgafG1SRBkucX9nqogYsyquPhgL9VkD");
 
 describe("hexone", () => {
   // Configure the client to use the local cluster.

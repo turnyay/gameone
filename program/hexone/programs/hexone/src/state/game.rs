@@ -49,6 +49,6 @@ pub struct TileData {
     pub color: u8,              // 1-4 for red, yellow, blue, green
     pub _pad: u8,              // padding for alignment
     pub resource_count: u16,    // resources on this tile
-}
+    }
 
 

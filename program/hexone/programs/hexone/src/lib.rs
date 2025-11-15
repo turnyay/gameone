@@ -9,7 +9,7 @@ pub use state::*;
 pub use constants::*;
 pub use instructions::*;
 
-declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
+declare_id!("G99PsLJdkyfY9MgafG1SRBkucX9nqogYsyquPhgL9VkD");
 
 #[program]
 pub mod hexone {

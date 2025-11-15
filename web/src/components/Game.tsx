@@ -954,13 +954,13 @@ const Game: React.FC = () => {
                   [{formatTime(now)}] Connected to Solana blockchain...
                 </div>
                 <div style={{ color: '#ffa500', textAlign: 'left', paddingLeft: '0' }}>
-                  [{formatTime(new Date(now.getTime() + 1000))}] Loaded game board ok
+                  [{formatTime(now)}] Loaded game board ok
                 </div>
                 <div style={{ color: '#ffa500', textAlign: 'left', paddingLeft: '0' }}>
-                  [{formatTime(new Date(now.getTime() + 2000))}] Initialized player resources
+                  [{formatTime(now)}] Initialized player resources
                 </div>
                 <div style={{ color: '#ffa500', textAlign: 'left', paddingLeft: '0' }}>
-                  [{formatTime(new Date(now.getTime() + 3000))}] Ready for gameplay
+                  [{formatTime(now)}] Ready for gameplay
                 </div>
               </>
             );

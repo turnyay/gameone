@@ -73,6 +73,6 @@ pub fn create_game(ctx: Context<CreateGame>) -> Result<()> {
 
     // Increment platform game count
     platform.game_count += 1;
-
+    
     Ok(())
 }

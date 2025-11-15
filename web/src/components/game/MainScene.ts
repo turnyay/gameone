@@ -23,19 +23,42 @@ export class MainScene extends Phaser.Scene {
     HexTile.initializePlayers();
     this.createHexGrid();
     this.createGameBorder();
+    
+    // Calculate the actual game world bounds after tiles are created
+    const hexWidth = this.hexSize * 2;
+    const hexHeight = this.hexSize * Math.sqrt(3);
+    const maxPixelX = (this.gridSizeColumns - 1) * (hexWidth * 0.5 + this.gap);
+    const maxPixelY = (this.gridSizeRows - 1) * (hexHeight * 0.75 + this.gap);
+    
+    // Account for the *2 multiplier in tile positioning
+    const worldWidth = (GRID_CONFIG.OFFSET_WIDTH + maxPixelX) * 2 + hexWidth;
+    const worldHeight = (GRID_CONFIG.OFFSET_HEIGHT + maxPixelY) * 2 + hexHeight;
+    
+    // Center the camera on the grid
+    const centerX = worldWidth / 2;
+    const centerY = worldHeight / 2;
+    this.cameras.main.centerOn(centerX, centerY);
   }
 
   private createGameBorder() {
     const hexWidth = this.hexSize * 2;
     const hexHeight = this.hexSize * Math.sqrt(3);
-    const totalWidth = this.gridSizeColumns * (hexWidth * 0.5 + this.gap) + GRID_CONFIG.OFFSET_WIDTH * 2;
-    const totalHeight = this.gridSizeRows * (hexHeight * 0.75 + this.gap) + GRID_CONFIG.OFFSET_HEIGHT * 2;
+    const maxPixelX = (this.gridSizeColumns - 1) * (hexWidth * 0.5 + this.gap);
+    const maxPixelY = (this.gridSizeRows - 1) * (hexHeight * 0.75 + this.gap);
+    
+    // Calculate border dimensions accounting for *2 multiplier
+    const borderWidth = (GRID_CONFIG.OFFSET_WIDTH + maxPixelX) * 2 + hexWidth;
+    const borderHeight = (GRID_CONFIG.OFFSET_HEIGHT + maxPixelY) * 2 + hexHeight;
+    
+    // Center the border on the grid
+    const centerX = borderWidth / 2;
+    const centerY = borderHeight / 2;
 
     this.gameBorder = this.add.rectangle(
-      this.cameras.main.centerX,
-      this.cameras.main.centerY,
-      totalWidth,
-      totalHeight,
+      centerX,
+      centerY,
+      borderWidth,
+      borderHeight,
       0x000000,
       0
     );

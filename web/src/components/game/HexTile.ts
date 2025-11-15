@@ -40,7 +40,7 @@ export class HexTile extends Phaser.GameObjects.Container {
 
     // Create center dot
     this.dot = this.scene.add.circle(0, 0, 2, COLORS.WHITE);
-    this.add(this.dot);
+    // this.add(this.dot);
 
     // Create border
     this.border = this.scene.add.polygon(0, 0, this.originalPoints, COLORS.BLACK);
@@ -48,8 +48,9 @@ export class HexTile extends Phaser.GameObjects.Container {
     this.border.setVisible(false);
     this.add(this.border);
 
-    // Set up interactivity
-    this.hex.setInteractive();
+    // Set up interactivity with proper hit area matching the hex visual
+    // Use the hex polygon's interactive area directly
+    this.hex.setInteractive(new Phaser.Geom.Polygon(this.originalPoints), Phaser.Geom.Polygon.Contains);
     this.hex.on('pointerover', this.onHover, this);
     this.hex.on('pointerout', this.onHoverOut, this);
     this.hex.on('pointerdown', this.onTileClick, this);
@@ -63,8 +64,8 @@ export class HexTile extends Phaser.GameObjects.Container {
     for (let i = 0; i < 6; i++) {
       const angle = (i * Math.PI) / 3;
       points.push(new Phaser.Geom.Point(
-        this.hexSize * Math.cos(angle),
-        this.hexSize * Math.sin(angle)
+        this.hexSize * Math.cos(angle) + (this.hexSize),
+        this.hexSize * Math.sin(angle) + this.hexSize - 2
       ));
     }
     return points;
@@ -186,19 +187,27 @@ export class HexTile extends Phaser.GameObjects.Container {
     const text = this.getByName('resourceText') as Phaser.GameObjects.Text;
     if (text) {
       text.setText(this.resources.toString());
+      text.setPosition(0, 0); // Ensure it stays centered
     } else {
       const newText = this.scene.add.text(0, 0, this.resources.toString(), {
         color: '#ffffff',
-        fontSize: '16px'
+        fontSize: '16px',
+        fontFamily: 'Arial',
+        fontStyle: 'bold'
       });
-      newText.setOrigin(0.5);
+      newText.setOrigin(0.5, 0.5); // Center both horizontally and vertically
+      newText.setPosition(0, 0); // Explicitly center in container
       newText.setName('resourceText');
+      newText.setDepth(10); // Ensure text is on top
       this.add(newText);
     }
   }
 
   destroy() {
-    this.hex.removeAllListeners();
+    if (this.hex) {
+      this.hex.removeAllListeners();
+      this.hex.removeInteractive();
+    }
     super.destroy();
   }
 } 
