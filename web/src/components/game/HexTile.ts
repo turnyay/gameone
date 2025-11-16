@@ -21,6 +21,7 @@ export class HexTile extends Phaser.GameObjects.Container {
   static playerColorIndex: number = 0;
   static selectedTile: HexTile | null = null;
   static validMoveTiles: Set<HexTile> = new Set();
+  static currentUserColorIndex: number | null = null; // Color index of the connected player (the one with "YOU")
 
   constructor(config: HexTileConfig) {
     super(config.scene, config.x, config.y);
@@ -74,6 +75,10 @@ export class HexTile extends Phaser.GameObjects.Container {
 
   static setPlayerColorIndex(index: number) {
     HexTile.playerColorIndex = index;
+  }
+
+  static setCurrentUserColorIndex(index: number | null) {
+    HexTile.currentUserColorIndex = index;
   }
 
   private getNeighboringTiles(): HexTile[] {
@@ -165,42 +170,58 @@ export class HexTile extends Phaser.GameObjects.Container {
   }
 
   onTileClick() {
+    // Only allow interactions if there's a current user (someone with "YOU" label)
+    if (HexTile.currentUserColorIndex === null) {
+      return;
+    }
+
     if (HexTile.validMoveTiles.has(this)) {
       // Handle territory expansion
-      HexTile.setPlayerColorIndex(HexTile.playerColorIndex);
+      HexTile.setPlayerColorIndex(HexTile.currentUserColorIndex);
       HexTile.addTileToPlayer(this);
       // Set the color for the newly claimed tile
-      this.setColor(HexTile.playerColorIndex);
+      this.setColor(HexTile.currentUserColorIndex);
       HexTile.selectedTile?.clearSelection();
       HexTile.selectedTile = null;
       // Clear valid move highlights on all neighboring tiles
       HexTile.validMoveTiles.forEach(tile => tile.clearValidMoves());
       HexTile.validMoveTiles.clear();
-    } else if (HexTile.players[HexTile.playerColorIndex].tiles.has(`${this.tileIndexX},${this.tileIndexY}`)) {
-      // Handle player tile selection
-      if (HexTile.selectedTile === this) {
-        // Unselecting: clear selection and remove highlights from neighbors
-        this.clearSelection();
-        HexTile.selectedTile = null;
-        // Clear valid move highlights on all neighboring tiles
-        HexTile.validMoveTiles.forEach(tile => tile.clearValidMoves());
-        HexTile.validMoveTiles.clear();
-      } else {
-        // Selecting a new tile: clear previous selection and show valid moves
-        if (HexTile.selectedTile) {
-          HexTile.selectedTile.clearSelection();
-          // Clear previous valid move highlights
+    } else {
+      // Check if this tile belongs to the current user (the one with "YOU" label)
+      const tileKey = `${this.tileIndexX},${this.tileIndexY}`;
+      const isCurrentUserTile = HexTile.players[HexTile.currentUserColorIndex]?.tiles.has(tileKey);
+      
+      if (isCurrentUserTile) {
+        // Handle player tile selection - only for current user's tiles
+        if (HexTile.selectedTile === this) {
+          // Unselecting: clear selection and remove highlights from neighbors
+          this.clearSelection();
+          HexTile.selectedTile = null;
+          // Clear valid move highlights on all neighboring tiles
           HexTile.validMoveTiles.forEach(tile => tile.clearValidMoves());
           HexTile.validMoveTiles.clear();
+        } else {
+          // Selecting a new tile: clear previous selection and show valid moves
+          if (HexTile.selectedTile) {
+            HexTile.selectedTile.clearSelection();
+            // Clear previous valid move highlights
+            HexTile.validMoveTiles.forEach(tile => tile.clearValidMoves());
+            HexTile.validMoveTiles.clear();
+          }
+          this.startSelectionAnimation();
+          HexTile.selectedTile = this;
+          this.showValidMoves();
         }
-        this.startSelectionAnimation();
-        HexTile.selectedTile = this;
-        this.showValidMoves();
       }
     }
   }
 
   private showValidMoves() {
+    // Only show valid moves if there's a current user
+    if (HexTile.currentUserColorIndex === null) {
+      return;
+    }
+
     // Clear any existing valid move highlights
     HexTile.validMoveTiles.forEach(tile => tile.clearValidMoves());
     HexTile.validMoveTiles.clear();
@@ -211,10 +232,10 @@ export class HexTile extends Phaser.GameObjects.Container {
     // Highlight empty tiles (tiles not owned by any player)
     for (const neighbor of neighbors) {
       const tileKey = `${neighbor.tileIndexX},${neighbor.tileIndexY}`;
-      const isOwnedByPlayer = HexTile.players[HexTile.playerColorIndex].tiles.has(tileKey);
+      const isOwnedByCurrentUser = HexTile.players[HexTile.currentUserColorIndex]?.tiles.has(tileKey);
       
-      // Show as valid move if it's an empty tile (not owned by current player)
-      if (!isOwnedByPlayer) {
+      // Show as valid move if it's an empty tile (not owned by current user)
+      if (!isOwnedByCurrentUser) {
         neighbor.startValidMoveAnimation();
         HexTile.validMoveTiles.add(neighbor);
       }

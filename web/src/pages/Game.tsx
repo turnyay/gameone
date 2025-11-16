@@ -340,6 +340,25 @@ const Game: React.FC = () => {
     // Set the player's color index in the HexTile class
     HexTile.setPlayerColorIndex(playerColorIndex);
 
+    // Determine which player is the current user (the one with "YOU" label)
+    // by finding which game player has the current wallet
+    const gamePlayers = (game as any).gamePlayers || [];
+    const currentWallet = wallet.publicKey?.toString() || null;
+    let currentUserColorIndex: number | null = null;
+    
+    if (currentWallet && gamePlayers.length > 0) {
+      const currentUserPlayer = gamePlayers.find(
+        (p: { publicKey: string; colorIndex: number } | null) => 
+          p && p.publicKey === currentWallet
+      );
+      if (currentUserPlayer) {
+        currentUserColorIndex = currentUserPlayer.colorIndex;
+      }
+    }
+    
+    // Set the current user's color index in HexTile
+    HexTile.setCurrentUserColorIndex(currentUserColorIndex);
+
     // Calculate game dimensions to match MainScene's world bounds
     // This ensures all 11 rows and 13 columns are visible
     const hexWidth = GRID_CONFIG.HEX_SIZE * 2;
@@ -379,7 +398,29 @@ const Game: React.FC = () => {
     } as Phaser.Types.Core.GameConfig & { moveAllResources: boolean };
 
     gameRef.current = new Phaser.Game(config);
-  }, [playerColorIndex, game]); // Depend on game data as well
+  }, [playerColorIndex, game, wallet.publicKey]); // Depend on game data and wallet
+
+  // Update current user color index when game or wallet changes
+  useEffect(() => {
+    if (game) {
+      const gamePlayers = (game as any).gamePlayers || [];
+      const currentWallet = wallet.publicKey?.toString() || null;
+      let currentUserColorIndex: number | null = null;
+      
+      if (currentWallet && gamePlayers.length > 0) {
+        const currentUserPlayer = gamePlayers.find(
+          (p: { publicKey: string; colorIndex: number } | null) => 
+            p && p.publicKey === currentWallet
+        );
+        if (currentUserPlayer) {
+          currentUserColorIndex = currentUserPlayer.colorIndex;
+        }
+      }
+      
+      // Update the current user's color index in HexTile
+      HexTile.setCurrentUserColorIndex(currentUserColorIndex);
+    }
+  }, [game, wallet.publicKey]);
 
   useEffect(() => {
     // Initialize game immediately when component mounts and game data is loaded
