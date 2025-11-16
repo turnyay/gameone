@@ -30,6 +30,15 @@ pub mod hexone {
     pub fn join_game(ctx: Context<JoinGame>) -> Result<()> {
         instructions::join_game(ctx)
     }
+
+    pub fn move_resources(
+        ctx: Context<MoveResources>,
+        source_tile_index: u8,
+        destination_tile_index: u8,
+        resources_to_move: u16,
+    ) -> Result<()> {
+        instructions::move_resources(ctx, source_tile_index, destination_tile_index, resources_to_move)
+    }
 }
 
 

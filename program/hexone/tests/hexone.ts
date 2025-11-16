@@ -289,4 +289,61 @@ describe("hexone", () => {
       throw error;
     }
   });
+
+  it("Move Resources - Player 1 moves 50 resources to tile below", async () => {
+    try {
+      // Player 1 starts at tile 0 (row 0, col 0)
+      // The tile below is at row 1, col 0 = index 1 * 13 + 0 = 13
+      const sourceTileIndex = 0;
+      const destinationTileIndex = 13;
+      const resourcesToMove = 50;
+
+      // First, we need to set up tile 13 to be owned by player 1
+      // Since we can't directly modify game state, we'll need to move resources there first
+      // But wait - tile 13 might not be adjacent or might not be owned by player 1
+      // Let's check the game state first
+      let gameAccount = await program.account.game.fetch(gamePDA);
+      
+      // Verify player 1 owns tile 0
+      expect(gameAccount.tileData[sourceTileIndex].color).to.equal(1); // Red (player 1)
+      expect(gameAccount.tileData[sourceTileIndex].resourceCount).to.be.at.least(50);
+
+      // Verify tile 13 is owned by player 1 (set up in create_game)
+      expect(gameAccount.tileData[destinationTileIndex].color).to.equal(1); // Red (player 1)
+
+      // Try to move resources
+      const tx = await program.methods
+        .moveResources(sourceTileIndex, destinationTileIndex, resourcesToMove)
+        .accounts({
+          wallet: player1.publicKey,
+          player: player1PDA,
+          game: gamePDA,
+        })
+        .signers([player1])
+        .rpc();
+
+      console.log("Move Resources tx:", tx);
+
+      // Wait for transaction to be confirmed
+      await provider.connection.confirmTransaction(tx);
+
+      // Verify the move was successful
+      gameAccount = await program.account.game.fetch(gamePDA);
+      
+      // Check source tile has resources reduced
+      const sourceTile = gameAccount.tileData[sourceTileIndex];
+      expect(sourceTile.color).to.equal(1); // Still owned by player 1
+      expect(sourceTile.resourceCount).to.equal(100 - resourcesToMove); // 100 - 50 = 50
+
+      // Check destination tile has resources added
+      const destTile = gameAccount.tileData[destinationTileIndex];
+      expect(destTile.color).to.equal(1); // Owned by player 1
+      expect(destTile.resourceCount).to.equal(resourcesToMove); // Should have 50 resources (was 0, now 50)
+    } catch (error) {
+      console.error("Error moving resources:", error);
+      // If the error is because tile 13 is not owned by player 1, we need to set it up first
+      // For now, let's check if we need to handle this case
+      throw error;
+    }
+  });
 });

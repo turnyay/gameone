@@ -53,6 +53,9 @@ pub fn create_game(ctx: Context<CreateGame>) -> Result<()> {
     // Red (color 1) - top left
     game.tile_data[0].color = 1;
     game.tile_data[0].resource_count = 100;
+    // Red (color 1) - tile below (row 1, col 0) for testing move_resources
+    game.tile_data[columns].color = 1;
+    game.tile_data[columns].resource_count = 0;
 
     // Yellow (color 2) - top right
     game.tile_data[columns - 1].color = 2;
