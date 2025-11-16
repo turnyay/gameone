@@ -2,17 +2,13 @@ import React, { useEffect, useCallback, useState, useRef, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
-import { PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
-import { Program, AnchorProvider, Idl } from '@project-serum/anchor';
-import IDL_JSON from '../idl/hexone.json';
-import { GameAccount } from '../lib/hexone';
+import { PublicKey } from '@solana/web3.js';
+import { HexoneClient, GameAccount } from '../lib/hexone';
 import Phaser from 'phaser';
 import { MainScene } from '../components/game/MainScene';
 import { HexTile } from '../components/game/HexTile';
 import { UI } from '../components/game/UI';
 import { INITIAL_RESOURCES, RESOURCE_REFRESH_RATE, RESOURCES_PER_REFRESH, GRID_CONFIG } from '../components/game/constants';
-
-const PROGRAM_ID = new PublicKey('G99PsLJdkyfY9MgafG1SRBkucX9nqogYsyquPhgL9VkD');
 
 const Game: React.FC = () => {
   const { gameId } = useParams<{ gameId: string }>();
@@ -33,94 +29,18 @@ const Game: React.FC = () => {
   const [countdownSeconds, setCountdownSeconds] = useState(RESOURCE_REFRESH_RATE);
   const [joiningGame, setJoiningGame] = useState(false);
   
-  // Set up Anchor program for join game
-  const program = useMemo(() => {
-    if (!wallet.publicKey || !wallet.signTransaction || !wallet.signAllTransactions) {
+  // Set up HexoneClient - same pattern as SiclubClient
+  const client = useMemo(() => {
+    if (!wallet.publicKey || !wallet.signTransaction) {
       return null;
     }
-    const provider = new AnchorProvider(connection, wallet as any, {});
-    
-    // Helper function to transform type definitions
-    const transformType = (type: any): any => {
-      if (typeof type === 'string') {
-        if (type === 'pubkey') {
-          return 'publicKey';
-        }
-        return type;
-      }
-      if (type && typeof type === 'object') {
-        if (type.array) {
-          return {
-            array: Array.isArray(type.array) 
-              ? [transformType(type.array[0]), type.array[1]]
-              : transformType(type.array)
-          };
-        }
-        if (type.defined) {
-          return {
-            defined: typeof type.defined === 'string' 
-              ? type.defined 
-              : type.defined.name
-          };
-        }
-        if (type.option) {
-          return {
-            option: transformType(type.option)
-          };
-        }
-        if (type.vec) {
-          return {
-            vec: transformType(type.vec)
-          };
-        }
-      }
-      return type;
-    };
-
-    const toCamelCase = (str: string): string => {
-      return str.replace(/_([a-z])/g, (g) => g[1].toUpperCase());
-    };
-
-    const transformedIdl: Idl = {
-      version: IDL_JSON.metadata.version,
-      name: IDL_JSON.metadata.name,
-      instructions: IDL_JSON.instructions.map((ix: any) => ({
-        name: ix.name,
-        accounts: ix.accounts.map((acc: any) => ({
-          name: toCamelCase(acc.name),
-          isMut: acc.writable || false,
-          isSigner: acc.signer || false,
-        })),
-        args: (ix.args || []).map((arg: any) => ({
-          name: arg.name,
-          type: transformType(arg.type),
-        })),
-      })),
-      accounts: (IDL_JSON.accounts || []).map((acc: any) => ({
-        name: acc.name,
-        type: {
-          kind: 'struct' as const,
-          fields: (acc.type?.fields || []).map((field: any) => ({
-            name: field.name,
-            type: transformType(field.type),
-          })),
-        },
-      })),
-      types: (IDL_JSON.types || []).map((type: any) => ({
-        name: type.name,
-        type: {
-          kind: type.type?.kind || 'struct',
-          fields: (type.type?.fields || []).map((field: any) => ({
-            name: field.name,
-            type: transformType(field.type),
-          })),
-        },
-      })),
-      errors: IDL_JSON.errors || [],
-    };
-    
-    return new Program(transformedIdl, PROGRAM_ID, provider);
-  }, [connection, wallet]);
+    try {
+      return new HexoneClient(wallet);
+    } catch (err) {
+      console.error('Error creating HexoneClient:', err);
+      return null;
+    }
+  }, [wallet]);
 
   useEffect(() => {
     if (!gameId) return;
@@ -284,7 +204,7 @@ const Game: React.FC = () => {
   };
 
   const handleJoinGame = async () => {
-    if (!program || !wallet.publicKey || !game) {
+    if (!client || !wallet.publicKey || !game) {
       setError('Please connect your wallet first');
       return;
     }
@@ -293,14 +213,15 @@ const Game: React.FC = () => {
       setJoiningGame(true);
       setError(null);
 
-      // Find player PDA
+      // Use client method (similar to client.createClub in siclub)
+      // Note: We'll need to add a joinGame method to HexoneClient
+      // For now, using program directly but should be moved to client
       const [playerPda] = await PublicKey.findProgramAddress(
         [Buffer.from('player'), wallet.publicKey.toBuffer()],
-        PROGRAM_ID
+        client.getProgram().programId
       );
 
-      // Call join_game instruction
-      const tx = await program.methods
+      const tx = await client.getProgram().methods
         .joinGame()
         .accounts({
           wallet: wallet.publicKey,
@@ -400,7 +321,7 @@ const Game: React.FC = () => {
     gameRef.current = new Phaser.Game(config);
   }, [playerColorIndex, game, wallet.publicKey]); // Depend on game data and wallet
 
-  // Update current user color index when game or wallet changes
+  // Update current user color index and set up move resources callback when game or wallet changes
   useEffect(() => {
     if (game) {
       const gamePlayers = (game as any).gamePlayers || [];
@@ -419,8 +340,66 @@ const Game: React.FC = () => {
       
       // Update the current user's color index in HexTile
       HexTile.setCurrentUserColorIndex(currentUserColorIndex);
+
+      // Set up the move resources callback
+      HexTile.setOnMoveResources(async (sourceTileIndex: number, destinationTileIndex: number, resourcesToMove: number) => {
+        if (!client || !wallet.publicKey || !game) {
+          throw new Error('Wallet not connected or game not loaded');
+        }
+
+        // Explicitly log the values being passed to the transaction
+        console.log('Sending moveResources transaction with explicit values:', {
+          sourceTileIndex,
+          destinationTileIndex,
+          resourcesToMove,
+          sourceTileIndexType: typeof sourceTileIndex,
+          destinationTileIndexType: typeof destinationTileIndex,
+          resourcesToMoveType: typeof resourcesToMove,
+          gameColumns: game.columns,
+          gameRows: game.rows
+        });
+
+        // Validate indices are numbers and not NaN
+        if (typeof sourceTileIndex !== 'number' || isNaN(sourceTileIndex)) {
+          throw new Error(`Invalid sourceTileIndex: ${sourceTileIndex} (type: ${typeof sourceTileIndex})`);
+        }
+        if (typeof destinationTileIndex !== 'number' || isNaN(destinationTileIndex)) {
+          throw new Error(`Invalid destinationTileIndex: ${destinationTileIndex} (type: ${typeof destinationTileIndex})`);
+        }
+        if (typeof resourcesToMove !== 'number' || isNaN(resourcesToMove)) {
+          throw new Error(`Invalid resourcesToMove: ${resourcesToMove} (type: ${typeof resourcesToMove})`);
+        }
+
+        try {
+          if (!client) {
+            throw new Error('Client not initialized');
+          }
+
+          // Use client method instead of program.methods directly
+          const tx = await client.moveResources(
+            game.publicKey,
+            sourceTileIndex,
+            destinationTileIndex,
+            resourcesToMove
+          );
+
+          // Wait for transaction confirmation
+          await connection.confirmTransaction(tx);
+
+          // Refresh game data after successful transaction
+          setTimeout(() => {
+            fetchGame();
+          }, 1000);
+        } catch (err) {
+          console.error('Error in move resources transaction:', err);
+          throw err;
+        }
+      });
+    } else {
+      // Clear callback if no game
+      HexTile.setOnMoveResources(null);
     }
-  }, [game, wallet.publicKey]);
+  }, [game, wallet.publicKey, connection, client, fetchGame]);
 
   useEffect(() => {
     // Initialize game immediately when component mounts and game data is loaded

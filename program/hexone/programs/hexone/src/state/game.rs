@@ -38,7 +38,7 @@ impl Game {
         + 32                     // player3
         + 32                     // player4
         + 4                      // resources_per_minute
-        + (144 * 4)             // tile_data (144 * 4)
+        + (144 * 4)              // tile_data (144 * 4)
         + 5                      // game_state + rows + columns + version + bump
         + 3;                     // padding
 }

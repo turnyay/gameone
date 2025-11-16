@@ -33,8 +33,8 @@ pub mod hexone {
 
     pub fn move_resources(
         ctx: Context<MoveResources>,
-        source_tile_index: u8,
-        destination_tile_index: u8,
+        source_tile_index: u16,
+        destination_tile_index: u16,
         resources_to_move: u16,
     ) -> Result<()> {
         instructions::move_resources(ctx, source_tile_index, destination_tile_index, resources_to_move)

@@ -6,8 +6,8 @@ use crate::error::HexoneError;
 /// Check if two tiles are adjacent in a hexagonal grid
 /// Tiles are indexed as: index = row * columns + column
 fn are_tiles_adjacent(
-    source_index: u8,
-    destination_index: u8,
+    source_index: u16,
+    destination_index: u16,
     rows: u8,
     columns: u8,
 ) -> bool {
@@ -67,27 +67,11 @@ fn are_tiles_adjacent(
     false
 }
 
-#[derive(Accounts)]
-pub struct MoveResources<'info> {
-    #[account(mut)]
-    pub wallet: Signer<'info>,
-
-    #[account(
-        mut,
-        seeds = [b"player", wallet.key().as_ref()],
-        bump = player.bump,
-        constraint = player.wallet == wallet.key() @ HexoneError::PlayerNotAuthorized
-    )]
-    pub player: Account<'info, Player>,
-
-    #[account(mut)]
-    pub game: AccountLoader<'info, Game>,
-}
-
-pub fn move_resources(
+// Make the function pub(crate) so it can be called from the program module but not re-exported
+pub(crate) fn move_resources(
     ctx: Context<MoveResources>,
-    source_tile_index: u8,
-    destination_tile_index: u8,
+    source_tile_index: u16,
+    destination_tile_index: u16,
     resources_to_move: u16,
 ) -> Result<()> {
     let game = &mut ctx.accounts.game.load_mut()?;
@@ -119,6 +103,7 @@ pub fn move_resources(
     );
 
     // Ensure source and destination are different
+    // show error message containing the source and destination tile indices
     require!(
         source_tile_index != destination_tile_index,
         HexoneError::Invalid
@@ -185,4 +170,22 @@ pub fn move_resources(
 
     Ok(())
 }
+
+#[derive(Accounts)]
+pub struct MoveResources<'info> {
+    #[account(mut)]
+    pub wallet: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"player", wallet.key().as_ref()],
+        bump = player.bump,
+        constraint = player.wallet == wallet.key() @ HexoneError::PlayerNotAuthorized
+    )]
+    pub player: Account<'info, Player>,
+
+    #[account(mut)]
+    pub game: AccountLoader<'info, Game>,
+}
+
 

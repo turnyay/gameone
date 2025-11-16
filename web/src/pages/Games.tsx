@@ -3,11 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
-import { Program, AnchorProvider, Idl } from '@project-serum/anchor';
-import { GameAccount } from '../lib/hexone';
-import IDL_JSON from '../idl/hexone.json';
-
-const PROGRAM_ID = new PublicKey('G99PsLJdkyfY9MgafG1SRBkucX9nqogYsyquPhgL9VkD');
+import { HexoneClient, GameAccount } from '../lib/hexone';
 
 export function longToByteArray(long: number): number[] {
     const byteArray = [0, 0, 0, 0, 0, 0, 0, 0];
@@ -34,101 +30,18 @@ const Games: React.FC = () => {
   const [checkingPlayer, setCheckingPlayer] = useState(false);
   const [creatingGame, setCreatingGame] = useState(false);
 
-  // Set up Anchor program
-  const program = useMemo(() => {
-    if (!wallet.publicKey || !wallet.signTransaction || !wallet.signAllTransactions) {
+  // Set up HexoneClient - same pattern as SiclubClient
+  const client = useMemo(() => {
+    if (!wallet.publicKey || !wallet.signTransaction) {
       return null;
     }
-    const provider = new AnchorProvider(connection, wallet as any, {});
-    
-    // Helper function to transform type definitions
-    const transformType = (type: any): any => {
-      if (typeof type === 'string') {
-        // Convert "pubkey" to "publicKey" for Anchor compatibility
-        if (type === 'pubkey') {
-          return 'publicKey';
-        }
-        return type;
-      }
-      if (type && typeof type === 'object') {
-        // Handle array types
-        if (type.array) {
-          return {
-            array: Array.isArray(type.array) 
-              ? [transformType(type.array[0]), type.array[1]]
-              : transformType(type.array)
-          };
-        }
-        // Handle defined types
-        if (type.defined) {
-          return {
-            defined: typeof type.defined === 'string' 
-              ? type.defined 
-              : type.defined.name
-          };
-        }
-        // Handle option types
-        if (type.option) {
-          return {
-            option: transformType(type.option)
-          };
-        }
-        // Handle vec types
-        if (type.vec) {
-          return {
-            vec: transformType(type.vec)
-          };
-        }
-      }
-      return type;
-    };
-
-    // Helper to convert snake_case to camelCase
-    const toCamelCase = (str: string): string => {
-      return str.replace(/_([a-z])/g, (g) => g[1].toUpperCase());
-    };
-
-    // Transform the generated IDL to match @project-serum/anchor format
-    const transformedIdl: Idl = {
-      version: IDL_JSON.metadata.version,
-      name: IDL_JSON.metadata.name,
-      instructions: IDL_JSON.instructions.map((ix: any) => ({
-        name: ix.name,
-        accounts: ix.accounts.map((acc: any) => ({
-          name: toCamelCase(acc.name), // Convert account names to camelCase
-          isMut: acc.writable || false,
-          isSigner: acc.signer || false,
-        })),
-        args: (ix.args || []).map((arg: any) => ({
-          name: arg.name,
-          type: transformType(arg.type),
-        })),
-      })),
-      accounts: (IDL_JSON.accounts || []).map((acc: any) => ({
-        name: acc.name,
-        type: {
-          kind: 'struct' as const,
-          fields: (acc.type?.fields || []).map((field: any) => ({
-            name: field.name,
-            type: transformType(field.type),
-          })),
-        },
-      })),
-      types: (IDL_JSON.types || []).map((type: any) => ({
-        name: type.name,
-        type: {
-          kind: type.type?.kind || 'struct',
-          fields: (type.type?.fields || []).map((field: any) => ({
-            name: field.name,
-            type: transformType(field.type),
-          })),
-        },
-      })),
-      errors: IDL_JSON.errors || [],
-    };
-    
-    return new Program(transformedIdl, PROGRAM_ID, provider);
-  }, [connection, wallet]);
+    try {
+      return new HexoneClient(wallet);
+    } catch (err) {
+      console.error('Error creating HexoneClient:', err);
+      return null;
+    }
+  }, [wallet]);
 
   useEffect(() => {
     fetchPlatformInfo();
@@ -166,10 +79,14 @@ const Games: React.FC = () => {
 
       try {
         setCheckingPlayer(true);
+        if (!client) {
+          setPlayerAccount(null);
+          return;
+        }
         // Find player PDA
         const [playerPda] = await PublicKey.findProgramAddress(
           [Buffer.from('player'), wallet.publicKey.toBuffer()],
-          PROGRAM_ID
+          client.getProgram().programId
         );
 
         // Get player account data
@@ -225,15 +142,17 @@ const Games: React.FC = () => {
     };
 
     checkPlayerAccount();
-  }, [wallet.publicKey, connection]);
+  }, [wallet.publicKey, connection, client]);
 
   const fetchPlatformInfo = async () => {
     try {
       setLoading(true);
+      // Use read-only client for fetching platform info
+      const readOnlyClient = HexoneClient.createReadOnly();
       // Get platform account
       const [pda] = await PublicKey.findProgramAddress(
         [Buffer.from('platform')],
-        PROGRAM_ID
+        readOnlyClient.getProgram().programId
       );
       setPlatformPda(pda);
 
@@ -262,10 +181,12 @@ const Games: React.FC = () => {
         const gameCountBuffer = Buffer.alloc(8);
         gameCountBuffer.writeBigUInt64LE(BigInt(i), 0);
 
+        // Use read-only client for fetching games
+        const readOnlyClient = HexoneClient.createReadOnly();
         // Find the PDA using the correct seed format
         const [gamePda] = await PublicKey.findProgramAddress(
           [Buffer.from('GAME-'), gameCountBuffer],
-          PROGRAM_ID
+          readOnlyClient.getProgram().programId
         );
         
         console.log(`Fetching game ${i}, PDA: ${gamePda.toString()}`);
@@ -364,7 +285,7 @@ const Games: React.FC = () => {
   };
 
   const handleCreatePlayer = async () => {
-    if (!program || !wallet.publicKey) {
+    if (!client || !wallet.publicKey) {
       setError('Please connect your wallet first');
       return;
     }
@@ -376,13 +297,13 @@ const Games: React.FC = () => {
       // Find player PDA
       const [playerPda] = await PublicKey.findProgramAddress(
         [Buffer.from('player'), wallet.publicKey.toBuffer()],
-        PROGRAM_ID
+        client.getProgram().programId
       );
 
       // Find platform PDA
       const [platformPda] = await PublicKey.findProgramAddress(
         [Buffer.from('platform')],
-        PROGRAM_ID
+        client.getProgram().programId
       );
 
       // Create name buffer (32 bytes)
@@ -390,15 +311,14 @@ const Games: React.FC = () => {
       const playerName = wallet.publicKey.toString().slice(0, 31);
       Buffer.from(playerName).copy(name);
 
-      // Call create_player instruction
-      // Convert account names from snake_case to camelCase for Anchor JS client
-      const tx = await program.methods
+      // Call create_player instruction using client
+      const tx = await client.getProgram().methods
         .createPlayer(Array.from(name))
         .accounts({
           wallet: wallet.publicKey,
           platform: platformPda,
           player: playerPda,
-          systemProgram: SystemProgram.programId,
+          system_program: SystemProgram.programId,
         })
         .rpc();
 
@@ -412,10 +332,11 @@ const Games: React.FC = () => {
           if (!wallet.publicKey || !connection) return;
           
           try {
+            if (!client) return;
             setCheckingPlayer(true);
             const [playerPda] = await PublicKey.findProgramAddress(
               [Buffer.from('player'), wallet.publicKey.toBuffer()],
-              PROGRAM_ID
+              client.getProgram().programId
             );
             const playerAccountInfo = await connection.getAccountInfo(playerPda);
             
@@ -472,7 +393,7 @@ const Games: React.FC = () => {
   };
 
   const handleCreateGame = async () => {
-    if (!program || !wallet.publicKey) {
+    if (!client || !wallet.publicKey) {
       setError('Please connect your wallet first');
       return;
     }
@@ -484,7 +405,7 @@ const Games: React.FC = () => {
       // Find platform PDA
       const [platformPda] = await PublicKey.findProgramAddress(
         [Buffer.from('platform')],
-        PROGRAM_ID
+        client.getProgram().programId
       );
 
       // Get platform account to get current game count
@@ -504,27 +425,27 @@ const Games: React.FC = () => {
       // Find game PDA using platform game count
       const [gamePda] = await PublicKey.findProgramAddress(
         [Buffer.from('GAME-'), gameCountBuffer],
-        PROGRAM_ID
+        client.getProgram().programId
       );
 
       // Find player PDA for join_game
       const [playerPda] = await PublicKey.findProgramAddress(
         [Buffer.from('player'), wallet.publicKey.toBuffer()],
-        PROGRAM_ID
+        client.getProgram().programId
       );
 
-      // Build both instructions in a single transaction
-      const createGameIx = await program.methods
+      // Build both instructions in a single transaction using client
+      const createGameIx = await client.getProgram().methods
         .createGame()
         .accounts({
           admin: wallet.publicKey,
           platform: platformPda,
           game: gamePda,
-          systemProgram: SystemProgram.programId,
+          system_program: SystemProgram.programId,
         })
         .instruction();
 
-      const joinGameIx = await program.methods
+      const joinGameIx = await client.getProgram().methods
         .joinGame()
         .accounts({
           wallet: wallet.publicKey,

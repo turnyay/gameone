@@ -1,7 +1,537 @@
-import { Connection, PublicKey, SystemProgram } from '@solana/web3.js';
-import { Program, AnchorProvider, Idl } from '@project-serum/anchor';
+import { Connection, PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
+import { Program, AnchorProvider, Idl, Wallet as AnchorWallet, BN } from '@coral-xyz/anchor';
+import { WalletContextState } from '@solana/wallet-adapter-react';
+import { Hexone } from '../../../program/hexone/target/types/hexone';
 
 const PROGRAM_ID = new PublicKey('G99PsLJdkyfY9MgafG1SRBkucX9nqogYsyquPhgL9VkD');
+
+export const IDL: Idl = {
+  "version": "0.1.0",
+  "name": "hexone",
+  "instructions": [
+    {
+      "name": "createGame",
+      "accounts": [
+        {
+          "name": "admin",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "platform",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "game",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "createPlatform",
+      "accounts": [
+        {
+          "name": "admin",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "platform",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "createPlayer",
+      "accounts": [
+        {
+          "name": "wallet",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "platform",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "player",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "name",
+          "type": {
+            "array": ["u8", 32]
+          }
+        }
+      ]
+    },
+    {
+      "name": "joinGame",
+      "accounts": [
+        {
+          "name": "wallet",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "player",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "game",
+          "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "moveResources",
+      "accounts": [
+        {
+          "name": "wallet",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "player",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "game",
+          "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "sourceTileIndex",
+          "type": "u16"
+        },
+        {
+          "name": "destinationTileIndex",
+          "type": "u16"
+        },
+        {
+          "name": "resourcesToMove",
+          "type": "u16"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Game",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "publicKey"
+          },
+          {
+            "name": "player1",
+            "type": "publicKey"
+          },
+          {
+            "name": "player2",
+            "type": "publicKey"
+          },
+          {
+            "name": "player3",
+            "type": "publicKey"
+          },
+          {
+            "name": "player4",
+            "type": "publicKey"
+          },
+          {
+            "name": "resourcesPerMinute",
+            "type": "u32"
+          },
+          {
+            "name": "tileData",
+            "type": {
+              "array": [
+                {
+                  "defined": "TileData"
+                },
+                144
+              ]
+            }
+          },
+          {
+            "name": "gameState",
+            "type": "u8"
+          },
+          {
+            "name": "rows",
+            "type": "u8"
+          },
+          {
+            "name": "columns",
+            "type": "u8"
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "_padding",
+            "type": {
+              "array": ["u8", 3]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Platform",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "publicKey"
+          },
+          {
+            "name": "gameCount",
+            "type": "u64"
+          },
+          {
+            "name": "gamesCompleted",
+            "type": "u64"
+          },
+          {
+            "name": "totalPlayers",
+            "type": "u64"
+          },
+          {
+            "name": "gameCost",
+            "type": "u64"
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "_padding",
+            "type": {
+              "array": ["u8", 6]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Player",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "wallet",
+            "type": "publicKey"
+          },
+          {
+            "name": "name",
+            "type": {
+              "array": ["u8", 32]
+            }
+          },
+          {
+            "name": "gamesPlayed",
+            "type": "u32"
+          },
+          {
+            "name": "gamesWon",
+            "type": "u32"
+          },
+          {
+            "name": "lastGame",
+            "type": {
+              "option": "publicKey"
+            }
+          },
+          {
+            "name": "createdAt",
+            "type": "i64"
+          },
+          {
+            "name": "playerStatus",
+            "type": "u8"
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "_padding",
+            "type": {
+              "array": ["u8", 5]
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "types": [
+    {
+      "name": "Game",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "publicKey"
+          },
+          {
+            "name": "player1",
+            "type": "publicKey"
+          },
+          {
+            "name": "player2",
+            "type": "publicKey"
+          },
+          {
+            "name": "player3",
+            "type": "publicKey"
+          },
+          {
+            "name": "player4",
+            "type": "publicKey"
+          },
+          {
+            "name": "resourcesPerMinute",
+            "type": "u32"
+          },
+          {
+            "name": "tileData",
+            "type": {
+              "array": [
+                {
+                  "defined": "TileData"
+                },
+                144
+              ]
+            }
+          },
+          {
+            "name": "gameState",
+            "type": "u8"
+          },
+          {
+            "name": "rows",
+            "type": "u8"
+          },
+          {
+            "name": "columns",
+            "type": "u8"
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "_padding",
+            "type": {
+              "array": ["u8", 3]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Platform",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "publicKey"
+          },
+          {
+            "name": "gameCount",
+            "type": "u64"
+          },
+          {
+            "name": "gamesCompleted",
+            "type": "u64"
+          },
+          {
+            "name": "totalPlayers",
+            "type": "u64"
+          },
+          {
+            "name": "gameCost",
+            "type": "u64"
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "_padding",
+            "type": {
+              "array": ["u8", 6]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Player",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "wallet",
+            "type": "publicKey"
+          },
+          {
+            "name": "name",
+            "type": {
+              "array": ["u8", 32]
+            }
+          },
+          {
+            "name": "gamesPlayed",
+            "type": "u32"
+          },
+          {
+            "name": "gamesWon",
+            "type": "u32"
+          },
+          {
+            "name": "lastGame",
+            "type": {
+              "option": "publicKey"
+            }
+          },
+          {
+            "name": "createdAt",
+            "type": "i64"
+          },
+          {
+            "name": "playerStatus",
+            "type": "u8"
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "_padding",
+            "type": {
+              "array": ["u8", 5]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "TileData",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "color",
+            "type": "u8"
+          },
+          {
+            "name": "_pad",
+            "type": "u8"
+          },
+          {
+            "name": "resourceCount",
+            "type": "u16"
+          }
+        ]
+      }
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "Invalid",
+      "msg": "Invalid state"
+    },
+    {
+      "code": 6001,
+      "name": "Unauthorized",
+      "msg": "Unauthorized access"
+    },
+    {
+      "code": 6002,
+      "name": "PlayerNotAuthorized",
+      "msg": "Player is not authorized"
+    },
+    {
+      "code": 6003,
+      "name": "PlayerNotReady",
+      "msg": "Player is not ready to join a game"
+    },
+    {
+      "code": 6004,
+      "name": "GameNotWaiting",
+      "msg": "Game is not in waiting state"
+    },
+    {
+      "code": 6005,
+      "name": "GameFull",
+      "msg": "Game is full"
+    }
+  ]
+};
 
 export interface Game {
   pubkey: PublicKey;
@@ -68,146 +598,73 @@ export interface PlatformAccountData {
   bump: number;
 }
 
-export const IDL: Idl = {
-  "version": "0.1.0",
-  "name": "hexone",
-  "instructions": [],
-  "accounts": [
-    {
-      "name": "game",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "gameState",
-            "type": "u8"
-          },
-          {
-            "name": "admin",
-            "type": "publicKey"
-          },
-          {
-            "name": "player1",
-            "type": "publicKey"
-          },
-          {
-            "name": "player2",
-            "type": "publicKey"
-          },
-          {
-            "name": "player3",
-            "type": "publicKey"
-          },
-          {
-            "name": "player4",
-            "type": "publicKey"
-          },
-          {
-            "name": "tileData",
-            "type": {
-              "vec": {
-                "defined": "u8"
-              }
-            }
-          },
-          {
-            "name": "rows",
-            "type": "u8"
-          },
-          {
-            "name": "columns",
-            "type": "u8"
-          },
-          {
-            "name": "cost",
-            "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "platform",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "gameCount",
-            "type": "u32"
-          },
-          {
-            "name": "admin",
-            "type": "publicKey"
-          },
-          {
-            "name": "player1",
-            "type": "publicKey"
-          },
-          {
-            "name": "player2",
-            "type": "publicKey"
-          },
-          {
-            "name": "player3",
-            "type": "publicKey"
-          },
-          {
-            "name": "player4",
-            "type": "publicKey"
-          },
-          {
-            "name": "resourcesPerMinute",
-            "type": "u32"
-          },
-          {
-            "name": "gameState",
-            "type": "u8"
-          },
-          {
-            "name": "rows",
-            "type": "u8"
-          },
-          {
-            "name": "columns",
-            "type": "u8"
-          },
-          {
-            "name": "version",
-            "type": "u8"
-          },
-          {
-            "name": "bump",
-            "type": "u8"
-          }
-        ]
-      }
-    }
-  ],
-  "types": [],
-  "errors": []
-};
+interface WalletAdapter {
+  publicKey: PublicKey | null;
+  signTransaction: <T extends Transaction>(tx: T) => Promise<T>;
+  signAllTransactions: <T extends Transaction>(txs: T[]) => Promise<T[]>;
+}
 
 export class HexoneClient {
-  private program: Program;
+  private program: Program<Idl>;
   private connection: Connection;
   private provider?: AnchorProvider;
+  private programId: PublicKey;
 
-  constructor(connectionOrWallet: Connection | any) {
-    this.connection = connectionOrWallet.connection || connectionOrWallet;
+  constructor(
+    walletContext: WalletContextState
+  ) {
+    // Create connection to local test validator
+    this.connection = new Connection('http://localhost:8899', 'confirmed');
     
-    // If a wallet is provided, create a provider
-    if (connectionOrWallet.publicKey) {
-      this.provider = new AnchorProvider(this.connection, connectionOrWallet, {});
-      this.program = new Program(IDL, PROGRAM_ID, this.provider);
-    } else {
-      // For read-only operations, create a provider with a dummy wallet
-      const dummyWallet = {
-        publicKey: PublicKey.default,
-        signTransaction: async (tx: any) => tx,
-        signAllTransactions: async (txs: any[]) => txs,
-      };
-      this.provider = new AnchorProvider(this.connection, dummyWallet, {});
-      this.program = new Program(IDL, PROGRAM_ID, this.provider);
+    if (!walletContext.publicKey || !walletContext.signTransaction) {
+      throw new Error('Wallet not connected or missing required methods');
     }
+
+    // Create a proper wallet adapter that matches Anchor's expected type
+    const anchorWallet = {
+      publicKey: walletContext.publicKey,
+      signTransaction: walletContext.signTransaction,
+      signAllTransactions: walletContext.signAllTransactions || (async (txs) => txs),
+    };
+    
+    // Use the wallet adapter directly - same pattern as tests
+    this.provider = new AnchorProvider(this.connection, anchorWallet as AnchorWallet, {
+      commitment: 'confirmed',
+      preflightCommitment: 'confirmed',
+    });
+    
+    this.programId = PROGRAM_ID;
+    // Use same Program setup as tests: Program with IDL (tests use anchor.workspace.hexone)
+    this.program = new Program(IDL, this.programId, this.provider);
+  }
+
+  // Static method to create a read-only client
+  static createReadOnly(): HexoneClient {
+    const connection = new Connection('http://localhost:8899', 'confirmed');
+    const dummyWallet = {
+      publicKey: new PublicKey('11111111111111111111111111111111'),
+      signTransaction: async (tx: Transaction): Promise<Transaction> => tx,
+      signAllTransactions: async (txs: Transaction[]): Promise<Transaction[]> => txs,
+    };
+    
+    const provider = new AnchorProvider(
+      connection,
+      dummyWallet as AnchorWallet,
+      { commitment: 'confirmed' }
+    );
+    
+    // Create client without using constructor - same pattern as tests
+    const client = Object.create(HexoneClient.prototype);
+    client.connection = connection;
+    client.provider = provider;
+    client.programId = PROGRAM_ID;
+    client.program = new Program(IDL, PROGRAM_ID, provider);
+    return client;
+  }
+
+  // Expose program for direct access when needed
+  getProgram(): Program<Idl> {
+    return this.program;
   }
 
   async fetchGames(): Promise<GameAccount[]> {
@@ -369,6 +826,58 @@ export class HexoneClient {
     }
   }
 
+  async moveResources(
+    game: PublicKey,
+    sourceTileIndex: number,
+    destinationTileIndex: number,
+    resourcesToMove: number
+  ): Promise<string> {
+    if (!this.provider?.wallet.publicKey) {
+      throw new Error('Wallet not connected');
+    }
+
+    try {
+      // Find player PDA
+      const [playerPda] = await PublicKey.findProgramAddress(
+        [Buffer.from('player'), this.provider.wallet.publicKey.toBuffer()],
+        this.programId
+      );
+
+      // Ensure values are within u16 range (0-65535)
+      const sourceTileIndexU16 = Math.max(0, Math.min(65535, sourceTileIndex));
+      const destinationTileIndexU16 = Math.max(0, Math.min(65535, destinationTileIndex));
+      const resourcesToMoveU16 = Math.max(0, Math.min(65535, resourcesToMove));
+
+      console.log('Calling moveResources with:', {
+        sourceTileIndex: sourceTileIndexU16,
+        destinationTileIndex: destinationTileIndexU16,
+        resourcesToMove: resourcesToMoveU16,
+        original: { sourceTileIndex, destinationTileIndex, resourcesToMove }
+      });
+
+      // Call move_resources - @coral-xyz/anchor handles snake_case method names
+      // All parameters are now u16: source_tile_index, destination_tile_index, resources_to_move
+      const tx = await this.program.methods
+        .moveResources(
+          sourceTileIndex,
+          destinationTileIndex,
+          resourcesToMove
+        )
+        .accounts({
+          wallet: this.provider.wallet.publicKey,
+          player: playerPda,
+          game: game,
+        })
+        .rpc();
+
+      console.log('Move resources transaction:', tx);
+      return tx;
+    } catch (error) {
+      console.error('Error in moveResources:', error);
+      throw error;
+    }
+  }
+
   private getGameStatus(gameState: number): string {
     switch (gameState) {
       case 0:
@@ -381,4 +890,4 @@ export class HexoneClient {
         return 'Unknown';
     }
   }
-} 
+}

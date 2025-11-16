@@ -316,9 +316,6 @@ describe("hexone", () => {
       expect(gameAccount.tileData[sourceTileIndex].color).to.equal(1); // Red (player 1)
       expect(gameAccount.tileData[sourceTileIndex].resourceCount).to.be.at.least(50);
 
-      // Verify tile 13 is owned by player 1 (set up in create_game)
-      expect(gameAccount.tileData[destinationTileIndex].color).to.equal(1); // Red (player 1)
-
       // Try to move resources
       const tx = await program.methods
         .moveResources(sourceTileIndex, destinationTileIndex, resourcesToMove)

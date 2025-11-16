@@ -63,8 +63,7 @@
               },
               {
                 "kind": "account",
-                "path": "platform.game_count",
-                "account": "Platform"
+                "path": "platform.game_count"
               }
             ]
           }
@@ -298,11 +297,11 @@
       "args": [
         {
           "name": "source_tile_index",
-          "type": "u8"
+          "type": "u16"
         },
         {
           "name": "destination_tile_index",
-          "type": "u8"
+          "type": "u16"
         },
         {
           "name": "resources_to_move",

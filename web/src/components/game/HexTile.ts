@@ -22,6 +22,7 @@ export class HexTile extends Phaser.GameObjects.Container {
   static selectedTile: HexTile | null = null;
   static validMoveTiles: Set<HexTile> = new Set();
   static currentUserColorIndex: number | null = null; // Color index of the connected player (the one with "YOU")
+  static onMoveResources: ((sourceTileIndex: number, destinationTileIndex: number, resourcesToMove: number) => Promise<void>) | null = null;
 
   constructor(config: HexTileConfig) {
     super(config.scene, config.x, config.y);
@@ -79,6 +80,10 @@ export class HexTile extends Phaser.GameObjects.Container {
 
   static setCurrentUserColorIndex(index: number | null) {
     HexTile.currentUserColorIndex = index;
+  }
+
+  static setOnMoveResources(callback: ((sourceTileIndex: number, destinationTileIndex: number, resourcesToMove: number) => Promise<void>) | null) {
+    HexTile.onMoveResources = callback;
   }
 
   private getNeighboringTiles(): HexTile[] {
@@ -176,16 +181,108 @@ export class HexTile extends Phaser.GameObjects.Container {
     }
 
     if (HexTile.validMoveTiles.has(this)) {
-      // Handle territory expansion
-      HexTile.setPlayerColorIndex(HexTile.currentUserColorIndex);
-      HexTile.addTileToPlayer(this);
-      // Set the color for the newly claimed tile
-      this.setColor(HexTile.currentUserColorIndex);
-      HexTile.selectedTile?.clearSelection();
-      HexTile.selectedTile = null;
-      // Clear valid move highlights on all neighboring tiles
-      HexTile.validMoveTiles.forEach(tile => tile.clearValidMoves());
-      HexTile.validMoveTiles.clear();
+      // Handle territory expansion - send moveResources transaction
+      if (HexTile.selectedTile && HexTile.onMoveResources) {
+        const selectedTile = HexTile.selectedTile;
+        const clickedTile = this;
+        
+        // Explicitly capture tile coordinates at click time - read directly from tile properties
+        const sourceX = selectedTile.tileIndexX;
+        const sourceY = selectedTile.tileIndexY;
+        const destX = clickedTile.tileIndexX;
+        const destY = clickedTile.tileIndexY;
+        
+        // Validate coordinates are defined and are numbers
+        if (sourceX === undefined || sourceY === undefined || destX === undefined || destY === undefined) {
+          console.error('ERROR: Tile coordinates are undefined!', {
+            selectedTile: { x: sourceX, y: sourceY },
+            clickedTile: { x: destX, y: destY }
+          });
+          return;
+        }
+        
+        if (typeof sourceX !== 'number' || typeof sourceY !== 'number' || 
+            typeof destX !== 'number' || typeof destY !== 'number') {
+          console.error('ERROR: Tile coordinates are not numbers!', {
+            selectedTile: { x: sourceX, y: sourceY, xType: typeof sourceX, yType: typeof sourceY },
+            clickedTile: { x: destX, y: destY, xType: typeof destX, yType: typeof destY }
+          });
+          return;
+        }
+        
+        // Get grid dimensions from scene or game data
+        const scene = this.scene as any;
+        // Access MainScene.gameData to get actual game dimensions
+        const MainSceneClass = (scene.constructor as any);
+        const gameData = MainSceneClass.gameData;
+        const columns = gameData?.columns || scene.gridSizeColumns || 13;
+        
+        // Validate columns is a valid number
+        if (!columns || columns === 0 || typeof columns !== 'number') {
+          console.error('ERROR: Invalid columns value!', {
+            columns,
+            columnsType: typeof columns,
+            gameData,
+            gameDataColumns: gameData?.columns,
+            sceneGridSizeColumns: scene.gridSizeColumns
+          });
+          return;
+        }
+        
+        // Calculate tile indices explicitly: row * columns + column
+        // Same formula as MainScene.ts line 123: y * columns + x
+        const sourceTileIndex = sourceY * columns + sourceX;
+        const destinationTileIndex = destY * columns + destX;
+        
+        // Log for debugging
+        console.log('Tile click - calculating indices:', {
+          source: { x: sourceX, y: sourceY, index: sourceTileIndex },
+          destination: { x: destX, y: destY, index: destinationTileIndex },
+          columns,
+          sourceCalculation: `${sourceY} * ${columns} + ${sourceX} = ${sourceTileIndex}`,
+          destCalculation: `${destY} * ${columns} + ${destX} = ${destinationTileIndex}`,
+          selectedTileObject: selectedTile,
+          clickedTileObject: clickedTile
+        });
+        
+        // Validate indices are not 0 (unless actually at position 0,0)
+        if (sourceTileIndex === 0 && (sourceX !== 0 || sourceY !== 0)) {
+          console.error('ERROR: Source tile index is 0 but coordinates are not (0,0)!', {
+            sourceX, sourceY, columns, sourceTileIndex
+          });
+          return;
+        }
+        if (destinationTileIndex === 0 && (destX !== 0 || destY !== 0)) {
+          console.error('ERROR: Destination tile index is 0 but coordinates are not (0,0)!', {
+            destX, destY, columns, destinationTileIndex
+          });
+          return;
+        }
+        
+        // Calculate 50% of resources (rounded down to whole number)
+        // Must leave at least 1 resource (backend requirement)
+        const resourcesToMove = Math.min(
+          Math.floor(selectedTile.resources * 0.5),
+          selectedTile.resources - 1
+        );
+        
+        // Only proceed if there are enough resources (at least 2, so 50% is at least 1)
+        if (resourcesToMove >= 1 && selectedTile.resources >= 2) {
+          // Call the move resources callback with explicitly calculated indices
+          HexTile.onMoveResources(sourceTileIndex, destinationTileIndex, resourcesToMove)
+            .then(() => {
+              // Clear selection and valid moves after successful transaction
+              selectedTile.clearSelection();
+              HexTile.selectedTile = null;
+              HexTile.validMoveTiles.forEach(tile => tile.clearValidMoves());
+              HexTile.validMoveTiles.clear();
+            })
+            .catch((error) => {
+              console.error('Error moving resources:', error);
+              // Don't clear selection on error - let user try again
+            });
+        }
+      }
     } else {
       // Check if this tile belongs to the current user (the one with "YOU" label)
       const tileKey = `${this.tileIndexX},${this.tileIndexY}`;
