@@ -23,6 +23,7 @@ export class HexTile extends Phaser.GameObjects.Container {
   static validMoveTiles: Set<HexTile> = new Set();
   static currentUserColorIndex: number | null = null; // Color index of the connected player (the one with "YOU")
   static onMoveResources: ((sourceTileIndex: number, destinationTileIndex: number, resourcesToMove: number) => Promise<void>) | null = null;
+  static moveAllResources: boolean = false; // Whether to move all resources except 1
 
   constructor(config: HexTileConfig) {
     super(config.scene, config.x, config.y);
@@ -84,6 +85,10 @@ export class HexTile extends Phaser.GameObjects.Container {
 
   static setOnMoveResources(callback: ((sourceTileIndex: number, destinationTileIndex: number, resourcesToMove: number) => Promise<void>) | null) {
     HexTile.onMoveResources = callback;
+  }
+
+  static setMoveAllResources(value: boolean) {
+    HexTile.moveAllResources = value;
   }
 
   private getNeighboringTiles(): HexTile[] {
@@ -259,12 +264,16 @@ export class HexTile extends Phaser.GameObjects.Container {
           return;
         }
         
-        // Calculate 50% of resources (rounded down to whole number)
-        // Must leave at least 1 resource (backend requirement)
-        const resourcesToMove = Math.min(
-          Math.floor(selectedTile.resources * 0.5),
-          selectedTile.resources - 1
-        );
+        // Calculate resources to move based on moveAllResources setting
+        // If moveAllResources is true, move all resources except 1
+        // Otherwise, move 50% of resources (rounded down to whole number)
+        // Must always leave at least 1 resource (backend requirement)
+        const resourcesToMove = HexTile.moveAllResources
+          ? selectedTile.resources - 1  // Move all except 1
+          : Math.min(
+              Math.floor(selectedTile.resources * 0.5),
+              selectedTile.resources - 1
+            );
         
         // Only proceed if there are enough resources (at least 2, so 50% is at least 1)
         if (resourcesToMove >= 1 && selectedTile.resources >= 2) {

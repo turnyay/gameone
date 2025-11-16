@@ -21,28 +21,36 @@ fn are_tiles_adjacent(
         return false;
     }
 
-    let is_even_row = source_row % 2 == 0;
+    // Check if columns are valid
+    if source_col >= columns as usize || dest_col >= columns as usize {
+        return false;
+    }
 
-    // Define neighbor offsets based on whether the source row is even or odd
-    let neighbor_offsets = if is_even_row {
-        // Even rows: neighbors are (col+1,row), (col,row+1), (col-1,row), (col,row-1), (col+1,row-1), (col-1,row-1)
+    // Use column-based offset (odd-r column offset) to match frontend
+    // Frontend checks if column is odd, so we check if column is odd here too
+    let is_odd_column = source_col % 2 == 1;
+
+    // Define neighbor offsets based on whether the source column is odd or even
+    // This matches the frontend logic in HexTile.ts getNeighboringTiles()
+    let neighbor_offsets = if is_odd_column {
+        // Odd columns: neighbors are (1,1), (1,0), (0,-1), (-1,0), (-1,1), (0,1)
         [
+            (1, 1),   // bottom-right
             (1, 0),   // right
-            (0, 1),   // bottom
-            (-1, 0),  // left
             (0, -1),  // top
-            (1, -1),  // top-right
-            (-1, -1), // top-left
+            (-1, 0),  // left
+            (-1, 1),  // bottom-left
+            (0, 1),   // bottom
         ]
     } else {
-        // Odd rows: neighbors are (col+1,row), (col,row+1), (col-1,row), (col,row-1), (col+1,row+1), (col-1,row+1)
+        // Even columns: neighbors are (1,0), (1,-1), (0,-1), (-1,-1), (-1,0), (0,1)
         [
-            (1, 0),  // right
-            (0, 1),  // bottom
-            (-1, 0), // left
-            (0, -1), // top
-            (1, 1),  // bottom-right
-            (-1, 1), // bottom-left
+            (1, 0),   // right
+            (1, -1),  // top-right
+            (0, -1),  // top
+            (-1, -1), // top-left
+            (-1, 0),  // left
+            (0, 1),   // bottom
         ]
     };
 
@@ -103,7 +111,6 @@ pub(crate) fn move_resources(
     );
 
     // Ensure source and destination are different
-    // show error message containing the source and destination tile indices
     require!(
         source_tile_index != destination_tile_index,
         HexoneError::Invalid
@@ -130,10 +137,11 @@ pub(crate) fn move_resources(
         HexoneError::Invalid
     );
 
-    // If the destination tile is not owned by the player, check if it is owned by another player
+    // If the destination tile is not empty, it must be the same color as the player
+    // If its another players color then the action is "attack" not "move_resources"
     if game.tile_data[destination_tile_index as usize].color != 0 {
         require!(
-            game.tile_data[destination_tile_index as usize].color != player_color,
+            game.tile_data[destination_tile_index as usize].color == player_color,
             HexoneError::Invalid
         );
     }

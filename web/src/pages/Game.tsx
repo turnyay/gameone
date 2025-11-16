@@ -341,6 +341,9 @@ const Game: React.FC = () => {
       // Update the current user's color index in HexTile
       HexTile.setCurrentUserColorIndex(currentUserColorIndex);
 
+      // Update the moveAllResources setting in HexTile
+      HexTile.setMoveAllResources(moveAllResources);
+
       // Set up the move resources callback
       HexTile.setOnMoveResources(async (sourceTileIndex: number, destinationTileIndex: number, resourcesToMove: number) => {
         if (!client || !wallet.publicKey || !game) {
@@ -399,7 +402,12 @@ const Game: React.FC = () => {
       // Clear callback if no game
       HexTile.setOnMoveResources(null);
     }
-  }, [game, wallet.publicKey, connection, client, fetchGame]);
+  }, [game, wallet.publicKey, connection, client, fetchGame, moveAllResources]);
+
+  // Update moveAllResources setting in HexTile whenever it changes
+  useEffect(() => {
+    HexTile.setMoveAllResources(moveAllResources);
+  }, [moveAllResources]);
 
   useEffect(() => {
     // Initialize game immediately when component mounts and game data is loaded
