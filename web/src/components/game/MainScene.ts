@@ -43,7 +43,14 @@ export class MainScene extends Phaser.Scene {
     this.lastWidth = this.cameras.main.width;
     this.lastHeight = this.cameras.main.height;
 
+    // Initialize players with empty tile sets - game data will populate them
     HexTile.initializePlayers();
+    // Clear starting positions since we'll load from game data
+    for (let i = 0; i < 4; i++) {
+      if (HexTile.players[i]) {
+        HexTile.players[i].tiles.clear();
+      }
+    }
     this.createHexGrid();
     this.createGameBorder();
     

@@ -929,13 +929,11 @@ const Game: React.FC = () => {
             fontSize: '14px'
           }}>
             {[0, 1, 2, 3].map((playerIndex) => {
-              // Count tiles for this player by finding all entries with matching colorIndex
-              let score = 0;
-              Array.from(HexTile.players.entries()).forEach(([_, playerData]) => {
-                if (playerData.colorIndex === playerIndex) {
-                  score += playerData.tiles.size;
-                }
-              });
+              // Count tiles for this player by finding player with matching colorIndex
+              const playerEntry = Array.from(HexTile.players.entries())
+                .find(([_, data]) => data.colorIndex === playerIndex);
+              const player = playerEntry ? playerEntry[1] : null;
+              const score = player ? player.tiles.size : 0;
               const color = getColorFromIndex(playerIndex);
               const colorHex = `#${color.toString(16).padStart(6, '0')}`;
               const playerNames = ['Red', 'Yellow', 'Green', 'Blue'];

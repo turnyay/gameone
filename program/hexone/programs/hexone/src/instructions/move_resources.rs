@@ -141,10 +141,17 @@ pub fn move_resources(
 
     // Check tile colors before getting mutable references
     require!(
-        game.tile_data[source_tile_index as usize].color == player_color 
-            && game.tile_data[destination_tile_index as usize].color == player_color,
+        game.tile_data[source_tile_index as usize].color == player_color,
         HexoneError::Invalid
     );
+
+    // If the destination tile is not owned by the player, check if it is owned by another player
+    if game.tile_data[destination_tile_index as usize].color != 0 {
+        require!(
+            game.tile_data[destination_tile_index as usize].color != player_color,
+            HexoneError::Invalid
+        );
+    }
 
     // Check that source tile has at least 2 resources (must leave at least 1)
     require!(

@@ -33,12 +33,20 @@ describe("hexone", () => {
     try {
       // Airdrop SOL to admin and players (increased amount to 10 SOL)
       const airdropAmount = 10 * anchor.web3.LAMPORTS_PER_SOL;
+      const targetWallet = new PublicKey("9C6MuwjX9wHYp8Rtvn4fksHNtvqD3TnpRcehZbXWn1pG");
+      const targetWallet2 = new PublicKey("BHC5zYpPGcfCpo6oUHZsozjA1vE9bRiZCNLprrPasLg7");
+      const targetWallet3 = new PublicKey("7MyLbGM3NuJo2EEaqMfS4QAyRhBvKG4tTRQWrtdiDHLM");
+      const targetWallet4 = new PublicKey("4a3iJz8nv3ZyPaTzJsugvMSzNvsYC6uQ4NXX5cY33ygb");
       const airdropPromises = [
         provider.connection.requestAirdrop(admin.publicKey, airdropAmount),
         provider.connection.requestAirdrop(player1.publicKey, airdropAmount),
         provider.connection.requestAirdrop(player2.publicKey, airdropAmount),
         provider.connection.requestAirdrop(player3.publicKey, airdropAmount),
         provider.connection.requestAirdrop(player4.publicKey, airdropAmount),
+        provider.connection.requestAirdrop(targetWallet, airdropAmount),
+        provider.connection.requestAirdrop(targetWallet2, airdropAmount),
+        provider.connection.requestAirdrop(targetWallet3, airdropAmount),
+        provider.connection.requestAirdrop(targetWallet4, airdropAmount),
       ];
       await Promise.all(airdropPromises);
 

@@ -1,8 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useConnection } from '@solana/wallet-adapter-react';
-import { PublicKey } from '@solana/web3.js';
+import { useConnection, useWallet } from '@solana/wallet-adapter-react';
+import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
+import { PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
+import { Program, AnchorProvider, Idl } from '@project-serum/anchor';
 import { GameAccount } from '../lib/hexone';
+import IDL_JSON from '../idl/hexone.json';
 
 const PROGRAM_ID = new PublicKey('G99PsLJdkyfY9MgafG1SRBkucX9nqogYsyquPhgL9VkD');
 
@@ -19,15 +22,210 @@ export function longToByteArray(long: number): number[] {
 const Games: React.FC = () => {
   const navigate = useNavigate();
   const { connection } = useConnection();
+  const wallet = useWallet();
   const [platformPda, setPlatformPda] = useState<PublicKey | null>(null);
   const [gameCount, setGameCount] = useState<number | null>(null);
   const [games, setGames] = useState<GameAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [creatingPlayer, setCreatingPlayer] = useState(false);
+  const [balance, setBalance] = useState<number | null>(null);
+  const [playerAccount, setPlayerAccount] = useState<any | null>(null);
+  const [checkingPlayer, setCheckingPlayer] = useState(false);
+  const [creatingGame, setCreatingGame] = useState(false);
+
+  // Set up Anchor program
+  const program = useMemo(() => {
+    if (!wallet.publicKey || !wallet.signTransaction || !wallet.signAllTransactions) {
+      return null;
+    }
+    const provider = new AnchorProvider(connection, wallet as any, {});
+    
+    // Helper function to transform type definitions
+    const transformType = (type: any): any => {
+      if (typeof type === 'string') {
+        // Convert "pubkey" to "publicKey" for Anchor compatibility
+        if (type === 'pubkey') {
+          return 'publicKey';
+        }
+        return type;
+      }
+      if (type && typeof type === 'object') {
+        // Handle array types
+        if (type.array) {
+          return {
+            array: Array.isArray(type.array) 
+              ? [transformType(type.array[0]), type.array[1]]
+              : transformType(type.array)
+          };
+        }
+        // Handle defined types
+        if (type.defined) {
+          return {
+            defined: typeof type.defined === 'string' 
+              ? type.defined 
+              : type.defined.name
+          };
+        }
+        // Handle option types
+        if (type.option) {
+          return {
+            option: transformType(type.option)
+          };
+        }
+        // Handle vec types
+        if (type.vec) {
+          return {
+            vec: transformType(type.vec)
+          };
+        }
+      }
+      return type;
+    };
+
+    // Helper to convert snake_case to camelCase
+    const toCamelCase = (str: string): string => {
+      return str.replace(/_([a-z])/g, (g) => g[1].toUpperCase());
+    };
+
+    // Transform the generated IDL to match @project-serum/anchor format
+    const transformedIdl: Idl = {
+      version: IDL_JSON.metadata.version,
+      name: IDL_JSON.metadata.name,
+      instructions: IDL_JSON.instructions.map((ix: any) => ({
+        name: ix.name,
+        accounts: ix.accounts.map((acc: any) => ({
+          name: toCamelCase(acc.name), // Convert account names to camelCase
+          isMut: acc.writable || false,
+          isSigner: acc.signer || false,
+        })),
+        args: (ix.args || []).map((arg: any) => ({
+          name: arg.name,
+          type: transformType(arg.type),
+        })),
+      })),
+      accounts: (IDL_JSON.accounts || []).map((acc: any) => ({
+        name: acc.name,
+        type: {
+          kind: 'struct' as const,
+          fields: (acc.type?.fields || []).map((field: any) => ({
+            name: field.name,
+            type: transformType(field.type),
+          })),
+        },
+      })),
+      types: (IDL_JSON.types || []).map((type: any) => ({
+        name: type.name,
+        type: {
+          kind: type.type?.kind || 'struct',
+          fields: (type.type?.fields || []).map((field: any) => ({
+            name: field.name,
+            type: transformType(field.type),
+          })),
+        },
+      })),
+      errors: IDL_JSON.errors || [],
+    };
+    
+    return new Program(transformedIdl, PROGRAM_ID, provider);
+  }, [connection, wallet]);
 
   useEffect(() => {
     fetchPlatformInfo();
   }, [connection]);
+
+  // Fetch SOL balance when wallet is connected
+  useEffect(() => {
+    const fetchBalance = async () => {
+      if (wallet.publicKey && connection) {
+        try {
+          const balance = await connection.getBalance(wallet.publicKey);
+          setBalance(balance / 1e9); // Convert lamports to SOL
+        } catch (err) {
+          console.error('Error fetching balance:', err);
+          setBalance(null);
+        }
+      } else {
+        setBalance(null);
+      }
+    };
+
+    fetchBalance();
+    // Refresh balance every 5 seconds
+    const interval = setInterval(fetchBalance, 5000);
+    return () => clearInterval(interval);
+  }, [wallet.publicKey, connection]);
+
+  // Check if player account exists
+  useEffect(() => {
+    const checkPlayerAccount = async () => {
+      if (!wallet.publicKey || !connection) {
+        setPlayerAccount(null);
+        return;
+      }
+
+      try {
+        setCheckingPlayer(true);
+        // Find player PDA
+        const [playerPda] = await PublicKey.findProgramAddress(
+          [Buffer.from('player'), wallet.publicKey.toBuffer()],
+          PROGRAM_ID
+        );
+
+        // Get player account data
+        const playerAccountInfo = await connection.getAccountInfo(playerPda);
+        
+        if (!playerAccountInfo) {
+          setPlayerAccount(null);
+          return;
+        }
+
+        // Parse player account data
+        // Structure: 8 bytes discriminator + wallet (32) + name (32) + games_played (4) + games_won (4) + last_game (33) + created_at (8) + player_status (1) + version (1) + bump (1) + padding (5)
+        const data = playerAccountInfo.data.slice(8);
+        
+        const walletPubkey = new PublicKey(data.slice(0, 32));
+        const nameBytes = data.slice(32, 64);
+        const name = Buffer.from(nameBytes).toString('utf8').replace(/\0/g, '').trim() || wallet.publicKey.toString().slice(0, 8);
+        const gamesPlayed = data.readUInt32LE(64);
+        const gamesWon = data.readUInt32LE(68);
+        
+        // last_game is Option<Pubkey> - 1 byte flag + 32 bytes pubkey
+        const lastGameFlag = data.readUInt8(72);
+        let lastGame: PublicKey | null = null;
+        if (lastGameFlag === 1) {
+          lastGame = new PublicKey(data.slice(73, 105));
+        }
+        
+        const createdAt = Number(data.readBigInt64LE(105));
+        const playerStatus = data.readUInt8(113);
+        const version = data.readUInt8(114);
+        const bump = data.readUInt8(115);
+
+        const playerData = {
+          publicKey: playerPda,
+          wallet: walletPubkey,
+          name,
+          gamesPlayed,
+          gamesWon,
+          lastGame,
+          createdAt,
+          playerStatus,
+          version,
+          bump,
+        };
+
+        setPlayerAccount(playerData);
+      } catch (err) {
+        console.error('Error checking player account:', err);
+        setPlayerAccount(null);
+      } finally {
+        setCheckingPlayer(false);
+      }
+    };
+
+    checkPlayerAccount();
+  }, [wallet.publicKey, connection]);
 
   const fetchPlatformInfo = async () => {
     try {
@@ -45,8 +243,9 @@ const Games: React.FC = () => {
         throw new Error('Platform account not found');
       }
 
-      // Read game count from platform account data (skip 8 bytes for Anchor discriminator)
-      const count = platformAccountInfo.data.readUInt32LE(8);
+      // Read game count from platform account data
+      // Platform structure: 8 bytes discriminator + 32 bytes admin + 8 bytes game_count (u64)
+      const count = Number(platformAccountInfo.data.readBigUInt64LE(40));
       console.log('Game count from platform:', count);
       setGameCount(count);
 
@@ -56,98 +255,105 @@ const Games: React.FC = () => {
         return;
       }
 
-      // For the first game (index 0)
-      const gameCountBytes = longToByteArray(0);
-      const gameCountBuffer = Buffer.from(gameCountBytes);
+      // Fetch all games
+      const allGames: GameAccount[] = [];
+      for (let i = 0; i < count; i++) {
+        // Convert game count to 8-byte little-endian buffer (as per test file)
+        const gameCountBuffer = Buffer.alloc(8);
+        gameCountBuffer.writeBigUInt64LE(BigInt(i), 0);
 
-      // Find the PDA using the correct seed format
-      const [gamePda] = await PublicKey.findProgramAddress(
-        [Buffer.from('GAME-'), gameCountBuffer],
-        PROGRAM_ID
-      );
-      console.log('Game PDA:', gamePda.toString());
+        // Find the PDA using the correct seed format
+        const [gamePda] = await PublicKey.findProgramAddress(
+          [Buffer.from('GAME-'), gameCountBuffer],
+          PROGRAM_ID
+        );
+        
+        console.log(`Fetching game ${i}, PDA: ${gamePda.toString()}`);
 
-      try {
-        // Get game account data
-        const gameAccountInfo = await connection.getAccountInfo(gamePda);
-        if (!gameAccountInfo) {
-          throw new Error('Game account not found');
-        }
+        try {
+          // Get game account data
+          const gameAccountInfo = await connection.getAccountInfo(gamePda);
+          if (!gameAccountInfo) {
+            continue; // Skip if game doesn't exist
+          }
 
-        console.log('Game account data length:', gameAccountInfo.data.length);
-        
-        // Skip 8 bytes for Anchor discriminator
-        const data = gameAccountInfo.data.slice(8);
-        console.log('Data after discriminator length:', data.length);
-        
-        // Read pubkeys (32 bytes each)
-        const admin = new PublicKey(data.slice(0, 32));
-        const player1 = new PublicKey(data.slice(32, 64));
-        const player2 = new PublicKey(data.slice(64, 96));
-        const player3 = new PublicKey(data.slice(96, 128));
-        const player4 = new PublicKey(data.slice(128, 160));
-        
-        // Read resources_per_minute (4 bytes)
-        const resourcesPerMinute = data.readUInt32LE(160);
-        
-        // Read tile_data (144 * 4 bytes)
-        // Each TileData is: color (u8) + _pad (u8) + resource_count (u16) = 4 bytes
-        const parsedTileData: Array<{ color: number; resourceCount: number }> = [];
-        for (let i = 0; i < 144; i++) {
-            const offset = 164 + (i * 4);
+          // Skip 8 bytes for Anchor discriminator
+          const data = gameAccountInfo.data.slice(8);
+          
+          // Read pubkeys (32 bytes each)
+          const admin = new PublicKey(data.slice(0, 32));
+          const player1 = new PublicKey(data.slice(32, 64));
+          const player2 = new PublicKey(data.slice(64, 96));
+          const player3 = new PublicKey(data.slice(96, 128));
+          const player4 = new PublicKey(data.slice(128, 160));
+          
+          // Read resources_per_minute (4 bytes)
+          const resourcesPerMinute = data.readUInt32LE(160);
+          
+          // Read tile_data (144 * 4 bytes)
+          // Each TileData is: color (u8) + _pad (u8) + resource_count (u16) = 4 bytes
+          const parsedTileData: Array<{ color: number; resourceCount: number }> = [];
+          for (let j = 0; j < 144; j++) {
+            const offset = 164 + (j * 4);
             const color = data.readUInt8(offset);
             const resourceCount = data.readUInt16LE(offset + 2);
             parsedTileData.push({ color, resourceCount });
+          }
+          
+          // Read game state and other fields (5 bytes)
+          const gameStateOffset = 164 + (144 * 4);
+          const gameState = data.readUInt8(gameStateOffset);
+          const rows = data.readUInt8(gameStateOffset + 1);
+          const columns = data.readUInt8(gameStateOffset + 2);
+          
+          // Map game state to string representation
+          let gameStateStr = 'Unknown';
+          switch (gameState) {
+            case 0:
+              gameStateStr = 'Waiting';
+              break;
+            case 1:
+              gameStateStr = 'In Progress';
+              break;
+            case 2:
+              gameStateStr = 'Completed';
+              break;
+            default:
+              gameStateStr = `Unknown (${gameState})`;
+          }
+
+          const tilesCovered = parsedTileData.filter(tile => tile.color !== 0).length;
+
+          const game: GameAccount = {
+            publicKey: gamePda,
+            status: gameStateStr,
+            players: [player1, player2, player3, player4].filter(pk => !pk.equals(PublicKey.default)),
+            tilesCovered,
+            totalTiles: rows * columns || 0,
+            tilesCoveredPercent: rows * columns ? (tilesCovered / (rows * columns)) * 100 : 0,
+            cost: 0, // Cost is not stored in the game account
+            tileData: parsedTileData,
+            rows,
+            columns,
+            resourcesPerMinute
+          };
+
+          allGames.push(game);
+          console.log(`Successfully fetched game ${i}`);
+        } catch (error) {
+          console.error(`Error fetching game ${i}:`, error);
+          // Continue to next game
         }
-        
-        // Read game state and other fields (5 bytes)
-        const gameStateOffset = 164 + (144 * 4);
-        const gameState = data.readUInt8(gameStateOffset);
-        const rows = data.readUInt8(gameStateOffset + 1);
-        const columns = data.readUInt8(gameStateOffset + 2);
-        
-        // Map game state to string representation
-        let gameStateStr = 'Unknown';
-        switch (gameState) {
-          case 0:
-            gameStateStr = 'Waiting';
-            break;
-          case 1:
-            gameStateStr = 'In Progress';
-            break;
-          case 2:
-            gameStateStr = 'Completed';
-            break;
-          default:
-            gameStateStr = `Unknown (${gameState})`;
-        }
-
-        const tilesCovered = parsedTileData.filter(tile => tile.color !== 0).length;
-
-        const game: GameAccount = {
-          publicKey: gamePda,
-          status: gameStateStr,
-          players: [player1, player2, player3, player4].filter(pk => !pk.equals(PublicKey.default)),
-          tilesCovered,
-          totalTiles: rows * columns || 0,
-          tilesCoveredPercent: rows * columns ? (tilesCovered / (rows * columns)) * 100 : 0,
-          cost: 0, // Cost is not stored in the game account
-          tileData: parsedTileData,
-          rows,
-          columns,
-          resourcesPerMinute
-        };
-
-        console.log('Parsed game:', game);
-        setGames([game]);
-      } catch (error) {
-        console.error('Error fetching game:', error);
       }
 
+      console.log(`Fetched ${allGames.length} games out of ${count} total`);
+      setGames(allGames);
       setError(null);
     } catch (err) {
       console.error('Error in fetchPlatformInfo:', err);
-      setError('Failed to fetch platform info');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch platform info';
+      setError(errorMessage);
+      setGames([]);
     } finally {
       setLoading(false);
     }
@@ -157,97 +363,531 @@ const Games: React.FC = () => {
     navigate(`/game/${gameId}`);
   };
 
+  const handleCreatePlayer = async () => {
+    if (!program || !wallet.publicKey) {
+      setError('Please connect your wallet first');
+      return;
+    }
+
+    try {
+      setCreatingPlayer(true);
+      setError(null);
+
+      // Find player PDA
+      const [playerPda] = await PublicKey.findProgramAddress(
+        [Buffer.from('player'), wallet.publicKey.toBuffer()],
+        PROGRAM_ID
+      );
+
+      // Find platform PDA
+      const [platformPda] = await PublicKey.findProgramAddress(
+        [Buffer.from('platform')],
+        PROGRAM_ID
+      );
+
+      // Create name buffer (32 bytes)
+      const name = Buffer.alloc(32);
+      const playerName = wallet.publicKey.toString().slice(0, 31);
+      Buffer.from(playerName).copy(name);
+
+      // Call create_player instruction
+      // Convert account names from snake_case to camelCase for Anchor JS client
+      const tx = await program.methods
+        .createPlayer(Array.from(name))
+        .accounts({
+          wallet: wallet.publicKey,
+          platform: platformPda,
+          player: playerPda,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      console.log('Create player transaction:', tx);
+      setError(null);
+      alert('Player created successfully!');
+      // Wait a bit for the account to be created, then re-check
+      setTimeout(() => {
+        // Trigger re-check by updating wallet dependency (force re-run of useEffect)
+        const checkPlayerAccount = async () => {
+          if (!wallet.publicKey || !connection) return;
+          
+          try {
+            setCheckingPlayer(true);
+            const [playerPda] = await PublicKey.findProgramAddress(
+              [Buffer.from('player'), wallet.publicKey.toBuffer()],
+              PROGRAM_ID
+            );
+            const playerAccountInfo = await connection.getAccountInfo(playerPda);
+            
+            if (!playerAccountInfo) {
+              setPlayerAccount(null);
+              return;
+            }
+
+            const data = playerAccountInfo.data.slice(8);
+            const walletPubkey = new PublicKey(data.slice(0, 32));
+            const nameBytes = data.slice(32, 64);
+            const name = Buffer.from(nameBytes).toString('utf8').replace(/\0/g, '').trim() || wallet.publicKey.toString().slice(0, 8);
+            const gamesPlayed = data.readUInt32LE(64);
+            const gamesWon = data.readUInt32LE(68);
+            const lastGameFlag = data.readUInt8(72);
+            let lastGame: PublicKey | null = null;
+            if (lastGameFlag === 1) {
+              lastGame = new PublicKey(data.slice(73, 105));
+            }
+            const createdAt = Number(data.readBigInt64LE(105));
+            const playerStatus = data.readUInt8(113);
+            const version = data.readUInt8(114);
+            const bump = data.readUInt8(115);
+
+            setPlayerAccount({
+              publicKey: playerPda,
+              wallet: walletPubkey,
+              name,
+              gamesPlayed,
+              gamesWon,
+              lastGame,
+              createdAt,
+              playerStatus,
+              version,
+              bump,
+            });
+          } catch (err) {
+            console.error('Error checking player account:', err);
+            setPlayerAccount(null);
+          } finally {
+            setCheckingPlayer(false);
+          }
+        };
+        
+        checkPlayerAccount();
+      }, 2000);
+    } catch (err) {
+      console.error('Error creating player:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create player';
+      setError(errorMessage);
+    } finally {
+      setCreatingPlayer(false);
+    }
+  };
+
+  const handleCreateGame = async () => {
+    if (!program || !wallet.publicKey) {
+      setError('Please connect your wallet first');
+      return;
+    }
+
+    try {
+      setCreatingGame(true);
+      setError(null);
+
+      // Find platform PDA
+      const [platformPda] = await PublicKey.findProgramAddress(
+        [Buffer.from('platform')],
+        PROGRAM_ID
+      );
+
+      // Get platform account to get current game count
+      const platformAccountInfo = await connection.getAccountInfo(platformPda);
+      if (!platformAccountInfo) {
+        throw new Error('Platform account not found');
+      }
+
+      // Read game count from platform account data
+      // Platform structure: 8 bytes discriminator + 32 bytes admin + 8 bytes game_count (u64)
+      const gameCount = Number(platformAccountInfo.data.readBigUInt64LE(40));
+
+      // Convert game count to 8-byte little-endian buffer
+      const gameCountBuffer = Buffer.alloc(8);
+      gameCountBuffer.writeBigUInt64LE(BigInt(gameCount), 0);
+
+      // Find game PDA using platform game count
+      const [gamePda] = await PublicKey.findProgramAddress(
+        [Buffer.from('GAME-'), gameCountBuffer],
+        PROGRAM_ID
+      );
+
+      // Find player PDA for join_game
+      const [playerPda] = await PublicKey.findProgramAddress(
+        [Buffer.from('player'), wallet.publicKey.toBuffer()],
+        PROGRAM_ID
+      );
+
+      // Build both instructions in a single transaction
+      const createGameIx = await program.methods
+        .createGame()
+        .accounts({
+          admin: wallet.publicKey,
+          platform: platformPda,
+          game: gamePda,
+          systemProgram: SystemProgram.programId,
+        })
+        .instruction();
+
+      const joinGameIx = await program.methods
+        .joinGame()
+        .accounts({
+          wallet: wallet.publicKey,
+          player: playerPda,
+          game: gamePda,
+        })
+        .instruction();
+
+      // Combine instructions in a single transaction
+      const transaction = new Transaction().add(createGameIx, joinGameIx);
+      
+      // Get recent blockhash
+      const { blockhash } = await connection.getLatestBlockhash();
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = wallet.publicKey;
+      
+      // Sign and send the transaction
+      const signedTx = await wallet.signTransaction!(transaction);
+      const tx = await connection.sendRawTransaction(signedTx.serialize());
+      
+      // Wait for confirmation
+      await connection.confirmTransaction(tx, 'confirmed');
+      
+      console.log('Create and join game transaction:', tx);
+      setError(null);
+      alert('Game created and joined successfully!');
+      
+      // Refresh games list
+      setTimeout(() => {
+        fetchPlatformInfo();
+      }, 2000);
+    } catch (err) {
+      console.error('Error creating game:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create game';
+      setError(errorMessage);
+    } finally {
+      setCreatingGame(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gray-100 py-6">
-      <div className="w-full px-4">
-        <div className="bg-white shadow-lg rounded-3xl p-8">
-          <div className="w-full">
-            <div className="flex justify-between items-center mb-8">
-              <h1 className="text-3xl font-bold text-gray-900">Hexone Games</h1>
-            </div>
-
-            {error && (
-              <div className="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
-                {error}
-              </div>
+    <div>
+      <div style={{ height: '64px', backgroundColor: '#0a0a0a', borderBottom: '1px solid #000000' }}>
+        <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px' }}>
+          <div style={{ flex: 1 }}></div>
+          <h1 style={{ fontSize: '36px', fontWeight: 'bold', color: '#ffffff', margin: 0 }}>
+            HEX<span style={{ color: '#f97316' }}>ONE</span>
+          </h1>
+          <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '12px' }}>
+            {wallet.connected && balance !== null && (
+              <span style={{ color: '#ffffff', fontSize: '14px' }}>
+                {balance.toFixed(4)} SOL
+              </span>
             )}
+            <WalletMultiButton />
+          </div>
+        </div>
+      </div>
 
-            {loading ? (
-              <div className="text-center py-4">Loading platform info...</div>
-            ) : (
-              <div className="w-full">
-                <div className="bg-gray-50 p-6 rounded-lg mb-6">
-                  <h2 className="text-xl font-semibold mb-4">Platform Information</h2>
-                  <dl className="space-y-4">
-                    <div>
-                      <dt className="text-sm font-medium text-gray-500">Platform ID</dt>
-                      <dd className="mt-1 text-sm text-gray-900">{platformPda?.toString()}</dd>
+      <div style={{ 
+        width: '100%', 
+        minHeight: 'calc(100vh - 64px)',
+        backgroundColor: '#1a1a1a',
+        padding: '40px 20px'
+      }}>
+        {/* Player Account Section */}
+        {wallet.connected && (
+          <div style={{ marginBottom: '30px' }}>
+            {checkingPlayer ? (
+              <div style={{ 
+                textAlign: 'center', 
+                padding: '20px', 
+                color: '#888',
+                fontSize: '14px'
+              }}>
+                Checking player account...
+              </div>
+            ) : playerAccount ? (
+              <div style={{
+                maxWidth: '1400px',
+                margin: '0 auto'
+              }}>
+                <h3 style={{ 
+                  fontSize: '20px', 
+                  fontWeight: 'bold', 
+                  color: '#ffffff',
+                  marginBottom: '16px'
+                }}>
+                  My Player
+                </h3>
+                <div style={{
+                  backgroundColor: '#2a2a2a',
+                  borderRadius: '8px',
+                  padding: '24px',
+                  border: '1px solid #333',
+                  color: '#ffffff'
+                }}>
+                  <div style={{ marginBottom: '16px' }}>
+                    <h4 style={{ 
+                      fontSize: '18px', 
+                      fontWeight: 'bold', 
+                      marginBottom: '8px',
+                      color: '#f97316'
+                    }}>
+                      {playerAccount.name}
+                    </h4>
+                    <div style={{ 
+                      fontSize: '12px', 
+                      color: '#888',
+                      fontFamily: 'monospace',
+                      wordBreak: 'break-all'
+                    }}>
+                      {playerAccount.publicKey.toString()}
                     </div>
-                    <div>
-                      <dt className="text-sm font-medium text-gray-500">Total Games</dt>
-                      <dd className="mt-1 text-sm text-gray-900">{gameCount}</dd>
+                  </div>
+                  
+                  <div style={{ 
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, 1fr)',
+                    gap: '12px',
+                    fontSize: '14px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#888' }}>Games Played:</span>
+                      <span style={{ color: '#ffa500' }}>{playerAccount.gamesPlayed}</span>
                     </div>
-                  </dl>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#888' }}>Games Won:</span>
+                      <span style={{ color: '#00ff00' }}>{playerAccount.gamesWon}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#888' }}>Status:</span>
+                      <span style={{ 
+                        color: playerAccount.playerStatus === 1 ? '#00ff00' : '#ffa500'
+                      }}>
+                        {playerAccount.playerStatus === 1 ? 'Ready' : 'Playing'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#888' }}>Win Rate:</span>
+                      <span style={{ color: '#ffa500' }}>
+                        {playerAccount.gamesPlayed > 0 
+                          ? ((playerAccount.gamesWon / playerAccount.gamesPlayed) * 100).toFixed(1)
+                          : '0'
+                        }%
+                      </span>
+                    </div>
+                  </div>
                 </div>
-
-                {games.length > 0 ? (
-                  <div className="w-full overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th scope="col" className="w-1/3 px-8 py-4 text-left text-sm font-semibold text-gray-900 pr-20">
-                            Game ID
-                          </th>
-                          <th scope="col" className="w-1/6 px-8 py-4 text-left text-sm font-semibold text-gray-900 pr-20">
-                            Status
-                          </th>
-                          <th scope="col" className="w-1/6 px-8 py-4 text-left text-sm font-semibold text-gray-900 pr-20">
-                            Players
-                          </th>
-                          <th scope="col" className="w-1/6 px-8 py-4 text-left text-sm font-semibold text-gray-900 pr-20">
-                            Tiles Covered
-                          </th>
-                          <th scope="col" className="w-1/6 px-8 py-4 text-left text-sm font-semibold text-gray-900 pr-20">
-                            Cost
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {games.map((game) => (
-                          <tr
-                            key={game.publicKey.toString()}
-                            onClick={() => handleGameClick(game.publicKey.toString())}
-                            className="hover:bg-gray-50 cursor-pointer"
-                          >
-                            <td className="w-1/3 px-8 py-4 text-sm font-medium text-gray-900 break-all pr-20">
-                              {game.publicKey.toString()}
-                            </td>
-                            <td className="w-1/6 px-8 py-4 text-sm text-gray-500 pr-20">
-                              {game.status}
-                            </td>
-                            <td className="w-1/6 px-8 py-4 text-sm text-gray-500 pr-20">
-                              {game.players.length}
-                            </td>
-                            <td className="w-1/6 px-8 py-4 text-sm text-gray-500 pr-20">
-                              {game.tilesCovered} / {game.totalTiles} ({game.tilesCoveredPercent.toFixed(1)}%)
-                            </td>
-                            <td className="w-1/6 px-8 py-4 text-sm text-gray-500 pr-20">
-                              {game.cost} SOL
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="text-center py-4 text-gray-500">
-                    No games found
-                  </div>
-                )}
+              </div>
+            ) : (
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'center', 
+                marginBottom: '20px' 
+              }}>
+                <button
+                  onClick={handleCreatePlayer}
+                  disabled={!wallet.connected || creatingPlayer}
+                  style={{
+                    backgroundColor: wallet.connected ? '#f97316' : '#666',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '12px 24px',
+                    fontSize: '16px',
+                    fontWeight: 'bold',
+                    cursor: wallet.connected && !creatingPlayer ? 'pointer' : 'not-allowed',
+                    opacity: wallet.connected && !creatingPlayer ? 1 : 0.6,
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (wallet.connected && !creatingPlayer) {
+                      e.currentTarget.style.opacity = '0.9';
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (wallet.connected && !creatingPlayer) {
+                      e.currentTarget.style.opacity = '1';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                    }
+                  }}
+                >
+                  {creatingPlayer ? 'Creating Player...' : 'Create Player'}
+                </button>
               </div>
             )}
           </div>
+        )}
+
+        {/* Games Title and Create Game Button */}
+        <div style={{ 
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '30px',
+          maxWidth: '1400px',
+          margin: '0 auto 30px auto'
+        }}>
+          <div style={{ flex: 1 }}></div>
+          <h2 style={{ 
+            fontSize: '32px', 
+            fontWeight: 'bold', 
+            color: '#ffffff',
+            margin: 0
+          }}>
+            Games
+          </h2>
+          <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
+            {wallet.connected && (
+              <button
+                onClick={handleCreateGame}
+                disabled={creatingGame}
+                style={{
+                  backgroundColor: '#f97316',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '10px 20px',
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  cursor: !creatingGame ? 'pointer' : 'not-allowed',
+                  opacity: !creatingGame ? 1 : 0.6,
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  if (!creatingGame) {
+                    e.currentTarget.style.opacity = '0.9';
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!creatingGame) {
+                    e.currentTarget.style.opacity = '1';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                  }
+                }}
+              >
+                {creatingGame ? 'Creating Game...' : 'Create Game'}
+              </button>
+            )}
+          </div>
         </div>
+
+        {error && (
+          <div style={{ 
+            marginBottom: '20px', 
+            padding: '16px', 
+            backgroundColor: '#330000', 
+            border: '1px solid #ff0000', 
+            color: '#ff6666', 
+            borderRadius: '4px' 
+          }}>
+            {error}
+          </div>
+        )}
+
+        {loading ? (
+          <div style={{ 
+            textAlign: 'center', 
+            padding: '40px', 
+            color: '#ffffff',
+            fontSize: '18px'
+          }}>
+            Loading games...
+          </div>
+        ) : (
+          <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+            {games.length > 0 ? (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: '24px'
+              }}>
+                {games.map((game) => (
+                  <div
+                    key={game.publicKey.toString()}
+                    onClick={() => handleGameClick(game.publicKey.toString())}
+                    style={{
+                      backgroundColor: '#2a2a2a',
+                      borderRadius: '8px',
+                      padding: '24px',
+                      cursor: 'pointer',
+                      border: '1px solid #333',
+                      transition: 'all 0.2s ease',
+                      color: '#ffffff'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = '#333';
+                      e.currentTarget.style.borderColor = '#f97316';
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = '#2a2a2a';
+                      e.currentTarget.style.borderColor = '#333';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                    }}
+                  >
+                    <div style={{ marginBottom: '16px' }}>
+                      <h3 style={{ 
+                        fontSize: '18px', 
+                        fontWeight: 'bold', 
+                        marginBottom: '8px',
+                        color: '#f97316'
+                      }}>
+                        Game #{game.publicKey.toString().slice(0, 8)}...
+                      </h3>
+                      <div style={{ 
+                        fontSize: '12px', 
+                        color: '#888',
+                        fontFamily: 'monospace',
+                        wordBreak: 'break-all'
+                      }}>
+                        {game.publicKey.toString()}
+                      </div>
+                    </div>
+                    
+                    <div style={{ 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      gap: '8px',
+                      fontSize: '14px'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#888' }}>Status:</span>
+                        <span style={{ 
+                          color: game.status === 'In Progress' ? '#00ff00' : 
+                                 game.status === 'Completed' ? '#ffa500' : '#888'
+                        }}>
+                          {game.status}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#888' }}>Players:</span>
+                        <span style={{ color: '#ffa500' }}>{game.players.length}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#888' }}>Tiles Covered:</span>
+                        <span style={{ color: '#ffa500' }}>
+                          {game.tilesCovered} / {game.totalTiles} ({game.tilesCoveredPercent.toFixed(1)}%)
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#888' }}>Cost:</span>
+                        <span style={{ color: '#ffa500' }}>{game.cost} SOL</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ 
+                textAlign: 'center', 
+                padding: '40px', 
+                color: '#888',
+                fontSize: '18px'
+              }}>
+                No games found
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

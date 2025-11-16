@@ -277,19 +277,35 @@ export class HexTile extends Phaser.GameObjects.Container {
       const color = PLAYER_COLORS[colorIndex];
       this.hex.setFillStyle(color);
       this.hex.setStrokeStyle(1, COLORS.WHITE);
+      
+      // Update resource text color if it exists
+      const text = this.getByName('resourceText') as Phaser.GameObjects.Text;
+      if (text) {
+        text.setColor(this.getResourceTextColor());
+      }
     }
+  }
+
+  private getResourceTextColor(): string {
+    // Yellow (index 1) uses black text for visibility
+    if (this.originalColorIndex === 1) {
+      return '#000000'; // Black
+    }
+    return '#ffffff'; // White for Red, Green, and Blue
   }
 
   addResources(amount: number) {
     this.resources += amount;
     // Update visual representation of resources
     const text = this.getByName('resourceText') as Phaser.GameObjects.Text;
+    const textColor = this.getResourceTextColor();
     if (text) {
       text.setText(this.resources.toString());
+      text.setColor(textColor);
       text.setPosition(0, 0); // Ensure it stays centered
     } else {
       const newText = this.scene.add.text(0, 0, this.resources.toString(), {
-        color: '#ffffff',
+        color: textColor,
         fontSize: '16px',
         fontFamily: 'Arial',
         fontStyle: 'bold'

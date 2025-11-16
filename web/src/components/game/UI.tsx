@@ -1,6 +1,5 @@
 import React from 'react';
 import { HexTile } from './HexTile';
-import { MainScene } from './MainScene';
 import { PLAYER_COLORS } from './constants';
 
 interface UIProps {
@@ -14,10 +13,21 @@ interface UIProps {
   handleAddResources: () => void;
   availableResources: number;
   countdownSeconds: number;
+  gamePlayers?: Array<{ publicKey: string; colorIndex: number } | null>;
+  currentWallet?: string | null;
+  onJoinGame?: () => void;
+  joiningGame?: boolean;
 }
 
 const getColorFromIndex = (index: number) => {
   return PLAYER_COLORS[index];
+};
+
+// Helper function to shorten pubkey
+const shortenPubkey = (pubkey: string): string => {
+  if (!pubkey) return '';
+  if (pubkey.length <= 8) return pubkey;
+  return `${pubkey.slice(0, 4)}...${pubkey.slice(-4)}`;
 };
 
 export const UI: React.FC<UIProps> = ({
@@ -28,7 +38,11 @@ export const UI: React.FC<UIProps> = ({
   handleButtonClick,
   handleAddResources,
   availableResources,
-  countdownSeconds
+  countdownSeconds,
+  gamePlayers = [],
+  currentWallet = null,
+  onJoinGame,
+  joiningGame = false
 }) => {
   return (
     <>
@@ -188,34 +202,101 @@ export const UI: React.FC<UIProps> = ({
             fontFamily: 'monospace',
             fontSize: '14px'
           }}>
-            {[0, 1, 2, 3].map((playerIndex) => {
-              // Count tiles directly from game data for accuracy
-              const scores = MainScene.getPlayerScores();
-              const score = scores[playerIndex] || 0;
-              const color = PLAYER_COLORS[playerIndex];
-              const colorHex = `#${color.toString(16).padStart(6, '0')}`;
-              const playerNames = ['Red', 'Yellow', 'Green', 'Blue'];
-              
-              return (
-                <div key={playerIndex} style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '10px',
-                  padding: '8px',
-                  backgroundColor: '#1a1a1a',
-                  borderRadius: '4px'
-                }}>
-                  <div style={{
-                    width: '16px',
-                    height: '16px',
-                    backgroundColor: colorHex,
-                    borderRadius: '2px'
-                  }} />
-                  <span style={{ color: '#888', flex: 1 }}>{playerNames[playerIndex]}:</span>
-                  <span style={{ color: '#ffa500' }}>{score}</span>
-                </div>
+            {(() => {
+              // Check if current user is already in the game
+              const isUserInGame = currentWallet && gamePlayers.some(
+                p => p && p.publicKey === currentWallet
               );
-            })}
+              
+              return [0, 1, 2, 3].map((playerIndex) => {
+                // Count tiles for this player from HexTile.players
+                const player = HexTile.players[playerIndex];
+                const score = player ? player.tiles.size : 0;
+                const color = PLAYER_COLORS[playerIndex];
+                const colorHex = `#${color.toString(16).padStart(6, '0')}`;
+                const playerNames = ['Red', 'Yellow', 'Green', 'Blue'];
+                
+                // Find player pubkey for this color index
+                const gamePlayer = gamePlayers.find(p => p && p.colorIndex === playerIndex);
+                const playerPubkey = gamePlayer ? gamePlayer.publicKey : null;
+                const isCurrentUser = currentWallet && playerPubkey && playerPubkey === currentWallet;
+                const isEmpty = !playerPubkey;
+                
+                return (
+                  <div key={playerIndex} style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '10px',
+                    padding: '8px',
+                    backgroundColor: '#1a1a1a',
+                    borderRadius: '4px'
+                  }}>
+                    <div style={{
+                      width: '16px',
+                      height: '16px',
+                      backgroundColor: colorHex,
+                      borderRadius: '2px'
+                    }} />
+                  <div style={{ 
+                    display: 'flex', 
+                    flexDirection: 'column',
+                    flex: 1,
+                    gap: '2px'
+                  }}>
+                    <div style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '8px' 
+                    }}>
+                      <span style={{ color: '#888', fontSize: '12px' }}>{playerNames[playerIndex]}</span>
+                      {isCurrentUser && (
+                        <button
+                          style={{
+                            backgroundColor: '#f97316',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: '4px',
+                            padding: '4px 12px',
+                            fontSize: '12px',
+                            fontWeight: 'bold',
+                            cursor: 'default'
+                          }}
+                        >
+                          YOU
+                        </button>
+                      )}
+                      {isEmpty && currentWallet && onJoinGame && !isUserInGame && (
+                        <button
+                          onClick={onJoinGame}
+                          disabled={joiningGame}
+                          style={{
+                            backgroundColor: '#f97316',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: '4px',
+                            padding: '4px 12px',
+                            fontSize: '12px',
+                            fontWeight: 'bold',
+                            cursor: joiningGame ? 'not-allowed' : 'pointer',
+                            opacity: joiningGame ? 0.6 : 1,
+                            transition: 'opacity 0.2s ease'
+                          }}
+                        >
+                          {joiningGame ? 'JOINING...' : 'JOIN'}
+                        </button>
+                      )}
+                    </div>
+                    {playerPubkey && (
+                      <span style={{ color: '#666', fontSize: '10px', fontFamily: 'monospace' }}>
+                        {shortenPubkey(playerPubkey)}
+                      </span>
+                    )}
+                  </div>
+                  <span style={{ color: '#ffa500' }}>{score}</span>
+                  </div>
+                );
+              });
+            })()}
           </div>
         </div>
 

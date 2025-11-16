@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
@@ -22,9 +22,8 @@ const App: React.FC = () => {
         <WalletModalProvider>
           <Router>
             <Routes>
-              <Route path="/games" element={<Games />} />
+              <Route path="/" element={<Games />} />
               <Route path="/game/:gameId" element={<Game />} />
-              <Route path="/" element={<Navigate to="/games" replace />} />
             </Routes>
           </Router>
         </WalletModalProvider>

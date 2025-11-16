@@ -1,7 +1,10 @@
-import React, { useEffect, useCallback, useState, useRef } from 'react';
+import React, { useEffect, useCallback, useState, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useConnection } from '@solana/wallet-adapter-react';
-import { PublicKey } from '@solana/web3.js';
+import { useConnection, useWallet } from '@solana/wallet-adapter-react';
+import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
+import { PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
+import { Program, AnchorProvider, Idl } from '@project-serum/anchor';
+import IDL_JSON from '../idl/hexone.json';
 import { GameAccount } from '../lib/hexone';
 import Phaser from 'phaser';
 import { MainScene } from '../components/game/MainScene';
@@ -15,9 +18,11 @@ const Game: React.FC = () => {
   const { gameId } = useParams<{ gameId: string }>();
   const navigate = useNavigate();
   const { connection } = useConnection();
+  const wallet = useWallet();
   const [game, setGame] = useState<GameAccount | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [balance, setBalance] = useState<number | null>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
   const [playerColorIndex, setPlayerColorIndex] = useState(0);
   const [moveAllResources, setMoveAllResources] = useState(false);
@@ -26,6 +31,96 @@ const Game: React.FC = () => {
   });
   const [availableResources, setAvailableResources] = useState(INITIAL_RESOURCES);
   const [countdownSeconds, setCountdownSeconds] = useState(RESOURCE_REFRESH_RATE);
+  const [joiningGame, setJoiningGame] = useState(false);
+  
+  // Set up Anchor program for join game
+  const program = useMemo(() => {
+    if (!wallet.publicKey || !wallet.signTransaction || !wallet.signAllTransactions) {
+      return null;
+    }
+    const provider = new AnchorProvider(connection, wallet as any, {});
+    
+    // Helper function to transform type definitions
+    const transformType = (type: any): any => {
+      if (typeof type === 'string') {
+        if (type === 'pubkey') {
+          return 'publicKey';
+        }
+        return type;
+      }
+      if (type && typeof type === 'object') {
+        if (type.array) {
+          return {
+            array: Array.isArray(type.array) 
+              ? [transformType(type.array[0]), type.array[1]]
+              : transformType(type.array)
+          };
+        }
+        if (type.defined) {
+          return {
+            defined: typeof type.defined === 'string' 
+              ? type.defined 
+              : type.defined.name
+          };
+        }
+        if (type.option) {
+          return {
+            option: transformType(type.option)
+          };
+        }
+        if (type.vec) {
+          return {
+            vec: transformType(type.vec)
+          };
+        }
+      }
+      return type;
+    };
+
+    const toCamelCase = (str: string): string => {
+      return str.replace(/_([a-z])/g, (g) => g[1].toUpperCase());
+    };
+
+    const transformedIdl: Idl = {
+      version: IDL_JSON.metadata.version,
+      name: IDL_JSON.metadata.name,
+      instructions: IDL_JSON.instructions.map((ix: any) => ({
+        name: ix.name,
+        accounts: ix.accounts.map((acc: any) => ({
+          name: toCamelCase(acc.name),
+          isMut: acc.writable || false,
+          isSigner: acc.signer || false,
+        })),
+        args: (ix.args || []).map((arg: any) => ({
+          name: arg.name,
+          type: transformType(arg.type),
+        })),
+      })),
+      accounts: (IDL_JSON.accounts || []).map((acc: any) => ({
+        name: acc.name,
+        type: {
+          kind: 'struct' as const,
+          fields: (acc.type?.fields || []).map((field: any) => ({
+            name: field.name,
+            type: transformType(field.type),
+          })),
+        },
+      })),
+      types: (IDL_JSON.types || []).map((type: any) => ({
+        name: type.name,
+        type: {
+          kind: type.type?.kind || 'struct',
+          fields: (type.type?.fields || []).map((field: any) => ({
+            name: field.name,
+            type: transformType(field.type),
+          })),
+        },
+      })),
+      errors: IDL_JSON.errors || [],
+    };
+    
+    return new Program(transformedIdl, PROGRAM_ID, provider);
+  }, [connection, wallet]);
 
   useEffect(() => {
     if (!gameId) return;
@@ -139,6 +234,18 @@ const Game: React.FC = () => {
         resourcesPerMinute
       };
 
+      // Map players to their color indices based on position
+      // player1 = Red (0), player2 = Yellow (1), player3 = Green (2), player4 = Blue (3)
+      const gamePlayers = [
+        !player1.equals(PublicKey.default) ? { publicKey: player1.toString(), colorIndex: 0 } : null,
+        !player2.equals(PublicKey.default) ? { publicKey: player2.toString(), colorIndex: 1 } : null,
+        !player3.equals(PublicKey.default) ? { publicKey: player3.toString(), colorIndex: 2 } : null,
+        !player4.equals(PublicKey.default) ? { publicKey: player4.toString(), colorIndex: 3 } : null,
+      ];
+      
+      // Store game players for UI
+      (gameData as any).gamePlayers = gamePlayers;
+
       console.log('Parsed game:', gameData);
       setGame(gameData);
       setError(null);
@@ -150,8 +257,73 @@ const Game: React.FC = () => {
     }
   };
 
+  // Fetch SOL balance when wallet is connected
+  useEffect(() => {
+    const fetchBalance = async () => {
+      if (wallet.publicKey && connection) {
+        try {
+          const balance = await connection.getBalance(wallet.publicKey);
+          setBalance(balance / 1e9); // Convert lamports to SOL
+        } catch (err) {
+          console.error('Error fetching balance:', err);
+          setBalance(null);
+        }
+      } else {
+        setBalance(null);
+      }
+    };
+
+    fetchBalance();
+    // Refresh balance every 5 seconds
+    const interval = setInterval(fetchBalance, 5000);
+    return () => clearInterval(interval);
+  }, [wallet.publicKey, connection]);
+
   const handleBack = () => {
-    navigate('/games');
+    navigate('/');
+  };
+
+  const handleJoinGame = async () => {
+    if (!program || !wallet.publicKey || !game) {
+      setError('Please connect your wallet first');
+      return;
+    }
+
+    try {
+      setJoiningGame(true);
+      setError(null);
+
+      // Find player PDA
+      const [playerPda] = await PublicKey.findProgramAddress(
+        [Buffer.from('player'), wallet.publicKey.toBuffer()],
+        PROGRAM_ID
+      );
+
+      // Call join_game instruction
+      const tx = await program.methods
+        .joinGame()
+        .accounts({
+          wallet: wallet.publicKey,
+          player: playerPda,
+          game: game.publicKey,
+        })
+        .rpc();
+
+      console.log('Join game transaction:', tx);
+      setError(null);
+      alert('Successfully joined the game!');
+      
+      // Refresh game data
+      setTimeout(() => {
+        fetchGame();
+      }, 2000);
+    } catch (err) {
+      console.error('Error joining game:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to join game';
+      setError(errorMessage);
+    } finally {
+      setJoiningGame(false);
+    }
   };
 
   const initGame = useCallback(() => {
@@ -266,12 +438,37 @@ const Game: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div>
       <div style={{ height: '64px', backgroundColor: '#0a0a0a', borderBottom: '1px solid #000000' }}>
-        <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <h1 style={{ fontSize: '36px', fontWeight: 'bold', color: '#ffffff' }}>
+        <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px' }}>
+          <div style={{ flex: 1 }}></div>
+          <h1 
+            onClick={() => navigate('/')}
+            style={{ 
+              fontSize: '36px', 
+              fontWeight: 'bold', 
+              color: '#ffffff',
+              cursor: 'pointer',
+              transition: 'opacity 0.2s ease',
+              margin: 0
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.opacity = '0.8';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.opacity = '1';
+            }}
+          >
             HEX<span style={{ color: '#f97316' }}>ONE</span>
           </h1>
+          <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '12px' }}>
+            {wallet.connected && balance !== null && (
+              <span style={{ color: '#ffffff', fontSize: '14px' }}>
+                {balance.toFixed(4)} SOL
+              </span>
+            )}
+            <WalletMultiButton />
+          </div>
         </div>
       </div>
 
@@ -311,6 +508,10 @@ const Game: React.FC = () => {
           handleAddResources={handleAddResources}
           availableResources={availableResources}
           countdownSeconds={countdownSeconds}
+          gamePlayers={game ? (game as any).gamePlayers : []}
+          currentWallet={wallet.publicKey?.toString() || null}
+          onJoinGame={handleJoinGame}
+          joiningGame={joiningGame}
         />
       </div>
     </div>
