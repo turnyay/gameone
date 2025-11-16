@@ -78,17 +78,49 @@ export class HexTile extends Phaser.GameObjects.Container {
 
   private getNeighboringTiles(): HexTile[] {
     const neighbors: HexTile[] = [];
-    const directions = [
-      { x: 1, y: 0 }, { x: 1, y: -1 }, { x: 0, y: -1 },
-      { x: -1, y: 0 }, { x: -1, y: 1 }, { x: 0, y: 1 }
-    ];
+    const scene = this.scene as any;
+    const tiles = scene.tiles;
+    
+    if (!tiles) {
+      return neighbors;
+    }
 
-    for (const dir of directions) {
-      const neighborX = this.tileIndexX + dir.x;
-      const neighborY = this.tileIndexY + dir.y;
-      const neighbor = (this.scene as any).tiles[neighborY]?.[neighborX];
-      if (neighbor) {
-        neighbors.push(neighbor);
+    const x = this.tileIndexX;
+    const y = this.tileIndexY;
+    const isOddColumn = x % 2 === 1;
+
+    // For odd-r offset hexagonal grid:
+    // Even columns: neighbors are at (1,0), (1,-1), (0,-1), (-1,-1), (-1,0), (0,1)
+    // Odd columns: neighbors are at (1,1), (1,0), (0,-1), (-1,0), (-1,1), (0,1)
+    const neighborOffsets = isOddColumn
+      ? [
+          { dx: 1, dy: 1 },   // bottom-right
+          { dx: 1, dy: 0 },   // right
+          { dx: 0, dy: -1 },  // top
+          { dx: -1, dy: 0 },  // left
+          { dx: -1, dy: 1 },  // bottom-left
+          { dx: 0, dy: 1 }    // bottom
+        ]
+      : [
+          { dx: 1, dy: 0 },   // right
+          { dx: 1, dy: -1 },  // top-right
+          { dx: 0, dy: -1 },  // top
+          { dx: -1, dy: -1 }, // top-left
+          { dx: -1, dy: 0 },  // left
+          { dx: 0, dy: 1 }    // bottom
+        ];
+
+    for (const offset of neighborOffsets) {
+      const neighborX = x + offset.dx;
+      const neighborY = y + offset.dy;
+      
+      // Check bounds
+      if (neighborY >= 0 && neighborY < tiles.length && 
+          neighborX >= 0 && neighborX < tiles[neighborY]?.length) {
+        const neighbor = tiles[neighborY][neighborX];
+        if (neighbor) {
+          neighbors.push(neighbor);
+        }
       }
     }
 
@@ -169,9 +201,20 @@ export class HexTile extends Phaser.GameObjects.Container {
   }
 
   private showValidMoves() {
+    // Clear any existing valid move highlights
+    HexTile.validMoveTiles.forEach(tile => tile.clearValidMoves());
+    HexTile.validMoveTiles.clear();
+
+    // Get all neighboring tiles
     const neighbors = this.getNeighboringTiles();
+    
+    // Highlight empty tiles (tiles not owned by any player)
     for (const neighbor of neighbors) {
-      if (!HexTile.players[HexTile.playerColorIndex].tiles.has(`${neighbor.tileIndexX},${neighbor.tileIndexY}`)) {
+      const tileKey = `${neighbor.tileIndexX},${neighbor.tileIndexY}`;
+      const isOwnedByPlayer = HexTile.players[HexTile.playerColorIndex].tiles.has(tileKey);
+      
+      // Show as valid move if it's an empty tile (not owned by current player)
+      if (!isOwnedByPlayer) {
         neighbor.startValidMoveAnimation();
         HexTile.validMoveTiles.add(neighbor);
       }

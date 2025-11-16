@@ -15,6 +15,20 @@ export class MainScene extends Phaser.Scene {
   private gameData: GameAccount | null = null;
 
   static gameData: GameAccount | null = null;
+  
+  // Static method to get player scores from game data
+  static getPlayerScores(): number[] {
+    const scores = [0, 0, 0, 0];
+    if (MainScene.gameData && MainScene.gameData.tileData) {
+      MainScene.gameData.tileData.forEach((tile) => {
+        if (tile.color > 0 && tile.color <= 4) {
+          const colorIndex = tile.color - 1;
+          scores[colorIndex]++;
+        }
+      });
+    }
+    return scores;
+  }
 
   constructor() {
     super({ key: 'MainScene' });

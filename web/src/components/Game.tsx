@@ -18,7 +18,7 @@ class HexTile extends Phaser.GameObjects.Container {
   private gap: number = 0;
   private offsetWidth: number = 80;
   private offsetHeight: number = 80;
-  private static players: Map<string, PlayerTileData> = new Map();
+  public static players: Map<string, PlayerTileData> = new Map();
   private isTarget: boolean = false;
   private resources: number = 0;
   private resourceText?: Phaser.GameObjects.Text;
@@ -876,10 +876,6 @@ const Game: React.FC = () => {
               <span style={{ color: '#888' }}>Game Prize Total:</span>
               <span style={{ color: '#ffa500' }}>4.25345 SOL</span>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ color: '#888' }}>Target Life Remaining:</span>
-              <span style={{ color: '#ffa500' }}>427/1000</span>
-            </div>
           </div>
         </div>
 
@@ -911,10 +907,6 @@ const Game: React.FC = () => {
               </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ color: '#888' }}>Target Life Acquired:</span>
-              <span style={{ color: '#ffa500' }}>0/1000</span>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <span style={{ color: '#888' }}>Percent Gameboard:</span>
               <span style={{ color: '#ffa500' }}>0.73% (1/137)</span>
             </div>
@@ -927,12 +919,56 @@ const Game: React.FC = () => {
         padding: '20px',
         color: '#fff'
       }}>
+        <div style={{ marginBottom: '30px' }}>
+          <h2 style={{ marginBottom: '20px' }}>Scoreboard</h2>
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: '10px',
+            fontFamily: 'monospace',
+            fontSize: '14px'
+          }}>
+            {[0, 1, 2, 3].map((playerIndex) => {
+              // Count tiles for this player by finding all entries with matching colorIndex
+              let score = 0;
+              Array.from(HexTile.players.entries()).forEach(([_, playerData]) => {
+                if (playerData.colorIndex === playerIndex) {
+                  score += playerData.tiles.size;
+                }
+              });
+              const color = getColorFromIndex(playerIndex);
+              const colorHex = `#${color.toString(16).padStart(6, '0')}`;
+              const playerNames = ['Red', 'Yellow', 'Green', 'Blue'];
+              
+              return (
+                <div key={playerIndex} style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '10px',
+                  padding: '8px',
+                  backgroundColor: '#1a1a1a',
+                  borderRadius: '4px'
+                }}>
+                  <div style={{
+                    width: '16px',
+                    height: '16px',
+                    backgroundColor: colorHex,
+                    borderRadius: '2px'
+                  }} />
+                  <span style={{ color: '#888', flex: 1 }}>{playerNames[playerIndex]}:</span>
+                  <span style={{ color: '#ffa500' }}>{score}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         <h2 style={{ marginBottom: '20px' }}>Live Feed</h2>
         <div style={{
           backgroundColor: '#000000',
           borderRadius: '4px',
           padding: '10px 5px',
-          height: 'calc(100% - 200px)',
+          height: 'calc(100% - 400px)',
           overflowY: 'auto',
           fontFamily: 'monospace',
           fontSize: '12px',

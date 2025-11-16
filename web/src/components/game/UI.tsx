@@ -1,5 +1,6 @@
 import React from 'react';
 import { HexTile } from './HexTile';
+import { MainScene } from './MainScene';
 import { PLAYER_COLORS } from './constants';
 
 interface UIProps {
@@ -135,10 +136,6 @@ export const UI: React.FC<UIProps> = ({
               <span style={{ color: '#888' }}>Game Prize Total:</span>
               <span style={{ color: '#ffa500' }}>4.25345 SOL</span>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ color: '#888' }}>Target Life Remaining:</span>
-              <span style={{ color: '#ffa500' }}>427/1000</span>
-            </div>
           </div>
         </div>
 
@@ -170,10 +167,6 @@ export const UI: React.FC<UIProps> = ({
               </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ color: '#888' }}>Target Life Acquired:</span>
-              <span style={{ color: '#ffa500' }}>0/1000</span>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <span style={{ color: '#888' }}>Percent Gameboard:</span>
               <span style={{ color: '#ffa500' }}>0.73% (1/137)</span>
             </div>
@@ -186,12 +179,52 @@ export const UI: React.FC<UIProps> = ({
         padding: '20px',
         color: '#fff'
       }}>
+        <div style={{ marginBottom: '30px' }}>
+          <h2 style={{ marginBottom: '20px' }}>Scoreboard</h2>
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: '10px',
+            fontFamily: 'monospace',
+            fontSize: '14px'
+          }}>
+            {[0, 1, 2, 3].map((playerIndex) => {
+              // Count tiles directly from game data for accuracy
+              const scores = MainScene.getPlayerScores();
+              const score = scores[playerIndex] || 0;
+              const color = PLAYER_COLORS[playerIndex];
+              const colorHex = `#${color.toString(16).padStart(6, '0')}`;
+              const playerNames = ['Red', 'Yellow', 'Green', 'Blue'];
+              
+              return (
+                <div key={playerIndex} style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '10px',
+                  padding: '8px',
+                  backgroundColor: '#1a1a1a',
+                  borderRadius: '4px'
+                }}>
+                  <div style={{
+                    width: '16px',
+                    height: '16px',
+                    backgroundColor: colorHex,
+                    borderRadius: '2px'
+                  }} />
+                  <span style={{ color: '#888', flex: 1 }}>{playerNames[playerIndex]}:</span>
+                  <span style={{ color: '#ffa500' }}>{score}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         <h2 style={{ marginBottom: '20px' }}>Live Feed</h2>
         <div style={{
           backgroundColor: '#000000',
           borderRadius: '4px',
           padding: '10px 5px',
-          height: 'calc(100% - 200px)',
+          height: 'calc(100% - 400px)',
           overflowY: 'auto',
           fontFamily: 'monospace',
           fontSize: '12px',
