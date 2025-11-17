@@ -877,6 +877,59 @@ const Game: React.FC = () => {
               throw err;
             }
           }}
+          onAttackAgain={async () => {
+            if (!client || !wallet.publicKey || !game || !attackData) {
+              throw new Error('Wallet not connected or game not loaded');
+            }
+
+            try {
+              // Send new attack transaction with same tiles
+              const tx = await client.attackTile(
+                game.publicKey,
+                attackData.attackerTileIndex,
+                attackData.defenderTileIndex
+              );
+
+              // Wait for transaction confirmation
+              await connection.confirmTransaction(tx);
+
+              // Fetch updated game data
+              await fetchGame();
+
+              // Fetch defender account to get new attack start time
+              let newAttackStartedAt = Math.floor(Date.now() / 1000);
+              try {
+                const defender = await client.fetchDefender(game.publicKey, attackData.defenderTileIndex);
+                if (defender && defender.attackStartedAt) {
+                  newAttackStartedAt = defender.attackStartedAt;
+                }
+              } catch (error) {
+                console.error('Error fetching defender account:', error);
+              }
+
+              // Get updated tile data
+              const updatedGame = await client.fetchGame(game.publicKey.toString());
+              if (updatedGame) {
+                const updatedAttackerTile = updatedGame.tileData[attackData.attackerTileIndex];
+                const updatedDefenderTile = updatedGame.tileData[attackData.defenderTileIndex];
+
+                // Update attack data with new attack
+                setAttackData({
+                  ...attackData,
+                  attackerResources: updatedAttackerTile?.resourceCount || 0,
+                  defenderResources: updatedDefenderTile?.resourceCount || 0,
+                  attackStartedAt: newAttackStartedAt
+                });
+
+                // Clear resolved status and result
+                setAttackResolved(false);
+                setAttackResult(null);
+              }
+            } catch (err) {
+              console.error('Error attacking again:', err);
+              throw err;
+            }
+          }}
         />
       )}
     </div>

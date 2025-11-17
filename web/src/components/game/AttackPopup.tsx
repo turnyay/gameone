@@ -15,6 +15,7 @@ interface AttackPopupProps {
   defenderTileX: number;
   defenderTileY: number;
   onResolveAttack: () => Promise<void>;
+  onAttackAgain?: () => Promise<void>;
   attackStartedAt: number; // Unix timestamp
   isResolved?: boolean;
   attackerWon?: boolean;
@@ -84,6 +85,7 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
   defenderTileX,
   defenderTileY,
   onResolveAttack,
+  onAttackAgain,
   attackStartedAt,
   isResolved = false,
   attackerWon = false,
@@ -94,6 +96,7 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
   const [canResolve, setCanResolve] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
   const [showResult, setShowResult] = useState(isResolved);
+  const [isAttackingAgain, setIsAttackingAgain] = useState(false);
 
   useEffect(() => {
     if (!isOpen || isResolved) {
@@ -118,8 +121,20 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
     if (isResolved) {
       setShowResult(true);
       setCanResolve(false);
+    } else {
+      // Reset when attack is started again
+      setShowResult(false);
+      setTimeRemaining(3);
+      setCanResolve(false);
     }
   }, [isResolved]);
+
+  // Reset showResult when popup is opened with a new attack
+  useEffect(() => {
+    if (isOpen && !isResolved) {
+      setShowResult(false);
+    }
+  }, [isOpen, isResolved]);
 
   const handleResolve = async () => {
     if (!canResolve || isResolving) return;
@@ -131,6 +146,21 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
       console.error('Error resolving attack:', error);
     } finally {
       setIsResolving(false);
+    }
+  };
+
+  const handleAttackAgain = async () => {
+    if (!onAttackAgain || isAttackingAgain) return;
+    
+    setIsAttackingAgain(true);
+    try {
+      // Clear the result state before attacking again
+      setShowResult(false);
+      await onAttackAgain();
+    } catch (error) {
+      console.error('Error attacking again:', error);
+    } finally {
+      setIsAttackingAgain(false);
     }
   };
 
@@ -309,21 +339,42 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
             </button>
           )}
           {showResult && (
-            <button
-              onClick={onClose}
-              style={{
-                padding: '12px 24px',
-                backgroundColor: '#f97316',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: '4px',
-                fontSize: '16px',
-                fontWeight: 'bold',
-                cursor: 'pointer'
-              }}
-            >
-              Close
-            </button>
+            <>
+              {onAttackAgain && (
+                <button
+                  onClick={handleAttackAgain}
+                  disabled={isAttackingAgain}
+                  style={{
+                    padding: '12px 24px',
+                    backgroundColor: isAttackingAgain ? '#666' : '#f97316',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '4px',
+                    fontSize: '16px',
+                    fontWeight: 'bold',
+                    cursor: isAttackingAgain ? 'not-allowed' : 'pointer',
+                    opacity: isAttackingAgain ? 0.6 : 1
+                  }}
+                >
+                  {isAttackingAgain ? 'Attacking...' : 'Attack Again'}
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                style={{
+                  padding: '12px 24px',
+                  backgroundColor: '#f97316',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '4px',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer'
+                }}
+              >
+                Close
+              </button>
+            </>
           )}
         </div>
 
