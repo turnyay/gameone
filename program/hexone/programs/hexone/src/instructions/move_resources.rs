@@ -5,7 +5,7 @@ use crate::error::HexoneError;
 
 /// Check if two tiles are adjacent in a hexagonal grid
 /// Tiles are indexed as: index = row * columns + column
-fn are_tiles_adjacent(
+pub(crate) fn are_tiles_adjacent(
     source_index: u16,
     destination_index: u16,
     rows: u8,

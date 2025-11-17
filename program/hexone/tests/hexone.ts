@@ -298,56 +298,278 @@ describe("hexone", () => {
     }
   });
 
-  it("Move Resources - Player 1 moves 50 resources to tile below", async () => {
+  it("Move Resources - Player 1 moves all resources from (0,0) to (11,0)", async () => {
     try {
-      // Player 1 starts at tile 0 (row 0, col 0)
-      // The tile below is at row 1, col 0 = index 1 * 13 + 0 = 13
-      const sourceTileIndex = 0;
-      const destinationTileIndex = 13;
-      const resourcesToMove = 50;
-
-      // First, we need to set up tile 13 to be owned by player 1
-      // Since we can't directly modify game state, we'll need to move resources there first
-      // But wait - tile 13 might not be adjacent or might not be owned by player 1
-      // Let's check the game state first
       let gameAccount = await program.account.game.fetch(gamePDA);
       
-      // Verify player 1 owns tile 0
-      expect(gameAccount.tileData[sourceTileIndex].color).to.equal(1); // Red (player 1)
-      expect(gameAccount.tileData[sourceTileIndex].resourceCount).to.be.at.least(50);
-
-      // Try to move resources
-      const tx = await program.methods
-        .moveResources(sourceTileIndex, destinationTileIndex, resourcesToMove)
-        .accounts({
-          wallet: player1.publicKey,
-          player: player1PDA,
-          game: gamePDA,
-        })
-        .signers([player1])
-        .rpc();
-
-      console.log("Move Resources tx:", tx);
-
-      // Wait for transaction to be confirmed
-      await provider.connection.confirmTransaction(tx);
-
-      // Verify the move was successful
+      // Red starts at tile 0 (row 0, col 0) = (0, 0)
+      // Yellow is at tile 12 (row 0, col 12) = (12, 0)
+      // We want to move to tile 11 (row 0, col 11) = (11, 0) to be adjacent to yellow
+      // Since tiles are not directly adjacent, we need to move step by step
+      
+      // Tile indices: index = row * columns + column
+      // (0,0) = 0, (0,1) = 1, ..., (0,11) = 11
+      
+      // Move resources step by step from tile 0 to tile 11
+      // Each move: move all resources except 1 (to keep the tile)
+      let currentTile = 0;
+      const targetTile = 11; // (11, 0)
+      
+      while (currentTile < targetTile) {
+        const nextTile = currentTile + 1;
+        gameAccount = await program.account.game.fetch(gamePDA);
+        const currentResources = gameAccount.tileData[currentTile].resourceCount;
+        
+        // Move all resources except 1 (must leave at least 1)
+        const resourcesToMove = currentResources > 1 ? currentResources - 1 : 0;
+        
+        if (resourcesToMove > 0) {
+          console.log(`Moving ${resourcesToMove} resources from tile ${currentTile} to tile ${nextTile}`);
+          
+          const tx = await program.methods
+            .moveResources(currentTile, nextTile, resourcesToMove)
+            .accounts({
+              wallet: player1.publicKey,
+              player: player1PDA,
+              game: gamePDA,
+            })
+            .signers([player1])
+            .rpc();
+          
+          console.log(`Move from ${currentTile} to ${nextTile} tx:`, tx);
+          await provider.connection.confirmTransaction(tx);
+        }
+        
+        currentTile = nextTile;
+      }
+      
+      // Verify final state
       gameAccount = await program.account.game.fetch(gamePDA);
       
-      // Check source tile has resources reduced
-      const sourceTile = gameAccount.tileData[sourceTileIndex];
-      expect(sourceTile.color).to.equal(1); // Still owned by player 1
-      expect(sourceTile.resourceCount).to.equal(100 - resourcesToMove); // 100 - 50 = 50
-
-      // Check destination tile has resources added
-      const destTile = gameAccount.tileData[destinationTileIndex];
-      expect(destTile.color).to.equal(1); // Owned by player 1
-      expect(destTile.resourceCount).to.equal(resourcesToMove); // Should have 50 resources (was 0, now 50)
+      // Tile 0 should have 1 resource left
+      expect(gameAccount.tileData[0].color).to.equal(1); // Red
+      expect(gameAccount.tileData[0].resourceCount).to.equal(1);
+      
+      // Tile 11 should have most resources
+      // Since we move step by step leaving 1 resource at each tile,
+      // tile 11 will have approximately 100 - 11 = 89 resources
+      expect(gameAccount.tileData[11].color).to.equal(1); // Red
+      expect(gameAccount.tileData[11].resourceCount).to.be.at.least(89); // Should have most resources
+      
+      console.log("Resources successfully moved to tile 11");
     } catch (error) {
       console.error("Error moving resources:", error);
-      // If the error is because tile 13 is not owned by player 1, we need to set it up first
-      // For now, let's check if we need to handle this case
+      throw error;
+    }
+  });
+
+  it("Attack 3 Times in Sequence - Player 1 (Red) attacks Player 2 (Yellow)", async () => {
+    try {
+      // Red is at tile 11 (row 0, col 11) = (11, 0) from previous test
+      // Yellow is at tile 12 (row 0, col 12) = (12, 0)
+      // Attack from tile 11 to tile 12 (yellow) 3 times
+      
+      const attackerTileIndex = 11;
+      const defenderTileIndex = 12;
+      
+      // Find defender PDA (based on defender tile index only)
+      const defenderTileBuffer = Buffer.alloc(2);
+      defenderTileBuffer.writeUInt16LE(defenderTileIndex, 0);
+      
+      const [defenderPDA] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("defender"),
+          gamePDA.toBuffer(),
+          defenderTileBuffer,
+        ],
+        PROGRAM_ID
+      );
+      
+      console.log("Defender PDA:", defenderPDA.toBase58());
+      
+      const colorNames: { [key: number]: string } = { 1: "Red", 2: "Yellow", 3: "Green", 4: "Blue" };
+      
+      // Perform 3 attacks
+      for (let attackRound = 1; attackRound <= 3; attackRound++) {
+        console.log(`\n=== Attack Round ${attackRound} ===`);
+        
+        // Get current game state
+        let gameAccount = await program.account.game.fetch(gamePDA);
+        
+        const attackerResources = gameAccount.tileData[attackerTileIndex].resourceCount;
+        const defenderResources = gameAccount.tileData[defenderTileIndex].resourceCount;
+        const defenderColor = gameAccount.tileData[defenderTileIndex].color;
+        
+        console.log(`Tile ${attackerTileIndex} (attacker) resources:`, attackerResources);
+        console.log(`Tile ${defenderTileIndex} (defender) resources:`, defenderResources);
+        console.log(`Tile ${defenderTileIndex} color:`, defenderColor);
+        
+        // Check if attacker can still attack (needs at least 2 resources)
+        if (attackerResources < 2) {
+          console.log("Attacker doesn't have enough resources to attack (need at least 2)");
+          break;
+        }
+        
+        // Verify defender account doesn't exist before attack (should be deleted from previous round)
+        if (attackRound > 1) {
+          try {
+            await program.account.defender.fetch(defenderPDA);
+            throw new Error("Defender account should not exist before new attack!");
+          } catch (e: any) {
+            if (e.message.includes("should not exist")) {
+              throw e;
+            }
+            // Account doesn't exist, which is expected
+            console.log("✓ Confirmed: Defender account deleted from previous round");
+          }
+        }
+        
+        // Create attack (account will be created fresh each time since it's closed on resolve)
+        const attackTx = await program.methods
+          .attackTile(attackerTileIndex, defenderTileIndex)
+          .accounts({
+            wallet: player1.publicKey,
+            player: player1PDA,
+            game: gamePDA,
+            defender: defenderPDA,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([player1])
+          .rpc();
+        
+        console.log(`Attack round ${attackRound} tx:`, attackTx);
+        await provider.connection.confirmTransaction(attackTx);
+        
+        // Verify defender account now exists
+        const defenderAccount = await program.account.defender.fetch(defenderPDA);
+        console.log("✓ Confirmed: Defender account created");
+        expect(defenderAccount.isAttackResolved).to.equal(false);
+        
+        // Try to attack again before resolving - should fail
+        console.log("Attempting to attack again before resolve (should fail)...");
+        try {
+          await program.methods
+            .attackTile(attackerTileIndex, defenderTileIndex)
+            .accounts({
+              wallet: player1.publicKey,
+              player: player1PDA,
+              game: gamePDA,
+              defender: defenderPDA,
+              systemProgram: SystemProgram.programId,
+            })
+            .signers([player1])
+            .rpc();
+          throw new Error("Should not be able to attack twice before resolve!");
+        } catch (e: any) {
+          if (e.message.includes("Should not be able")) {
+            throw e;
+          }
+          // Expected error - can't create account that already exists
+          console.log("✓ Confirmed: Cannot attack twice before resolve (account already exists)");
+        }
+        
+        // Wait 3.5 seconds before resolving
+        console.log("Waiting 3.5 seconds before resolving...");
+        await new Promise(resolve => setTimeout(resolve, 3500));
+        
+        // Resolve the attack (defender account will be closed after resolution)
+        // Use game account as destination for rent
+        const resolveTx = await program.methods
+          .resolveAttack()
+          .accounts({
+            game: gamePDA,
+            defender: defenderPDA,
+            destination: gamePDA, // Rent goes back to game account
+          })
+          .rpc();
+        
+        console.log(`Resolve round ${attackRound} tx:`, resolveTx);
+        await provider.connection.confirmTransaction(resolveTx);
+        
+        // Get transaction logs to see the program output
+        try {
+          const tx = await provider.connection.getTransaction(resolveTx, {
+            commitment: "confirmed",
+            maxSupportedTransactionVersion: 0,
+          });
+          
+          if (tx && tx.meta && tx.meta.logMessages) {
+            console.log("\n--- Transaction Logs ---");
+            tx.meta.logMessages.forEach((log: string) => {
+              // Filter for program logs (skip system logs)
+              if (log.includes("Program log:") || log.includes("Program data:")) {
+                const logMessage = log.replace("Program log: ", "").replace("Program data: ", "");
+                console.log(logMessage);
+              }
+            });
+            console.log("--- End Transaction Logs ---\n");
+          }
+        } catch (e) {
+          console.log("Could not fetch transaction logs:", e);
+        }
+        
+        // Verify defender account is deleted after resolution
+        try {
+          await program.account.defender.fetch(defenderPDA);
+          throw new Error("Defender account should be deleted after resolution!");
+        } catch (e: any) {
+          if (e.message.includes("should be deleted")) {
+            throw e;
+          }
+          // Account doesn't exist, which is expected
+          console.log("✓ Confirmed: Defender account deleted after resolution");
+        }
+        
+        // Check game state after resolution
+        gameAccount = await program.account.game.fetch(gamePDA);
+        
+        // Calculate total resources per color
+        const colorResources: { [key: number]: number } = { 1: 0, 2: 0, 3: 0, 4: 0 };
+        
+        gameAccount.tileData.forEach((tile: any) => {
+          if (tile.color > 0 && tile.color <= 4) {
+            colorResources[tile.color] = (colorResources[tile.color] || 0) + tile.resourceCount;
+          }
+        });
+        
+        // Display resource counts
+        console.log("Resulting resources:");
+        Object.keys(colorResources).forEach((colorKey) => {
+          const color = parseInt(colorKey);
+          if (colorResources[color] > 0) {
+            console.log(`  ${colorNames[color]} (${colorResources[color]})`);
+          }
+        });
+        
+        // Check if tile was taken (color changed to attacker's color)
+        const newDefenderColor = gameAccount.tileData[defenderTileIndex].color;
+        const newDefenderResources = gameAccount.tileData[defenderTileIndex].resourceCount;
+        
+        if (newDefenderColor === 1 && defenderColor !== 1) { // Red (attacker's color) and was different before
+          const oldColorName = colorNames[defenderColor] || "Unknown";
+          const newColorName = colorNames[newDefenderColor];
+          
+          console.log(`\n=== TILE TAKEN! ===`);
+          console.log(`${oldColorName} lost to ${newColorName}, moving ${newColorName} resources to new tile`);
+          console.log(`Tile ${defenderTileIndex} is now owned by attacker (${newColorName})`);
+          console.log(`Tile ${defenderTileIndex} resources:`, newDefenderResources);
+          console.log(`Tile ${attackerTileIndex} resources:`, gameAccount.tileData[attackerTileIndex].resourceCount);
+          break; // Stop attacking if tile is taken
+        }
+      }
+      
+      // Final verification
+      const finalGameAccount = await program.account.game.fetch(gamePDA);
+      
+      console.log("\n=== Final State ===");
+      console.log(`Tile ${attackerTileIndex} color:`, finalGameAccount.tileData[attackerTileIndex].color);
+      console.log(`Tile ${attackerTileIndex} resources:`, finalGameAccount.tileData[attackerTileIndex].resourceCount);
+      console.log(`Tile ${defenderTileIndex} color:`, finalGameAccount.tileData[defenderTileIndex].color);
+      console.log(`Tile ${defenderTileIndex} resources:`, finalGameAccount.tileData[defenderTileIndex].resourceCount);
+      
+      console.log("Attack test completed!");
+    } catch (error) {
+      console.error("Error in attack test:", error);
       throw error;
     }
   });

@@ -39,6 +39,18 @@ pub mod hexone {
     ) -> Result<()> {
         instructions::move_resources(ctx, source_tile_index, destination_tile_index, resources_to_move)
     }
+
+    pub fn attack_tile(
+        ctx: Context<AttackTile>,
+        attacker_tile_index: u16,
+        defender_tile_index: u16,
+    ) -> Result<()> {
+        instructions::attack_tile(ctx, attacker_tile_index, defender_tile_index)
+    }
+
+    pub fn resolve_attack(ctx: Context<ResolveAttack>) -> Result<()> {
+        instructions::resolve_attack(ctx)
+    }
 }
 
 

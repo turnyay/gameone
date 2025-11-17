@@ -24,3 +24,4 @@ bytemuck = { version = "1.20.0", features = ["min_const_generics"] }
 arrayref = "0.3.6"
 anchor-lang = "0.31.1"
 anchor-spl = "0.31.1"
+sha2 = "0.10"

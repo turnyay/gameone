@@ -16,6 +16,7 @@ export class HexTile extends Phaser.GameObjects.Container {
   private offsetHeight: number;
   private resources: number;
   private originalColorIndex: number | null = null; // Store the original player color index
+  private hasSpecialBorder: 'gold' | 'silver' | null = null; // Track if tile has a special border
 
   static players: Player[] = [];
   static playerColorIndex: number = 0;
@@ -46,8 +47,8 @@ export class HexTile extends Phaser.GameObjects.Container {
     this.dot = this.scene.add.circle(0, 0, 2, COLORS.WHITE);
     // this.add(this.dot);
 
-    // Create border
-    this.border = this.scene.add.polygon(0, 0, this.originalPoints, COLORS.BLACK);
+    // Create border (transparent fill, only stroke visible)
+    this.border = this.scene.add.polygon(0, 0, this.originalPoints, 0x000000, 0);
     this.border.setStrokeStyle(2, COLORS.WHITE);
     this.border.setVisible(false);
     this.add(this.border);
@@ -443,6 +444,26 @@ export class HexTile extends Phaser.GameObjects.Container {
       newText.setDepth(10); // Ensure text is on top
       this.add(newText);
     }
+  }
+
+  setGoldBorder() {
+    this.hasSpecialBorder = 'gold';
+    // Only modify the border stroke, keep hex fill color unchanged
+    this.border.setStrokeStyle(5, COLORS.GOLD);
+    this.border.setVisible(true);
+    this.border.setDepth(20); // Ensure border is on top
+    // Ensure border fill remains transparent
+    this.border.setFillStyle(0x000000, 0);
+  }
+
+  setSilverBorder() {
+    this.hasSpecialBorder = 'silver';
+    // Only modify the border stroke, keep hex fill color unchanged
+    this.border.setStrokeStyle(5, COLORS.SILVER);
+    this.border.setVisible(true);
+    this.border.setDepth(20); // Ensure border is on top
+    // Ensure border fill remains transparent
+    this.border.setFillStyle(0x000000, 0);
   }
 
   destroy() {

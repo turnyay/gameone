@@ -158,6 +158,49 @@ export class MainScene extends Phaser.Scene {
         this.tiles[y][x] = tile;
       }
     }
+
+    // Apply special borders to center tile and its neighbors
+    this.applySpecialBorders(columns);
+  }
+
+  private applySpecialBorders(columns: number) {
+    const centerCol = 6;
+    const centerRow = 5;
+    
+    // Apply gold border to center tile
+    if (this.tiles[centerRow] && this.tiles[centerRow][centerCol]) {
+      this.tiles[centerRow][centerCol].setGoldBorder();
+    }
+
+    // Calculate 6 neighbors of center tile
+    // Since col 6 is even, use even column neighbor offsets
+    const neighborOffsets = [
+      { dx: 1, dy: 0 },   // right
+      { dx: 1, dy: -1 },  // top-right
+      { dx: 0, dy: -1 },  // top
+      { dx: -1, dy: -1 }, // top-left
+      { dx: -1, dy: 0 },  // left
+      { dx: 0, dy: 1 }    // bottom
+    ];
+
+    // Apply silver borders to the 6 neighbors
+    for (const offset of neighborOffsets) {
+      const neighborCol = centerCol + offset.dx;
+      const neighborRow = centerRow + offset.dy;
+      
+      // Check bounds
+      if (neighborRow >= 0 && neighborRow < this.gridSizeRows &&
+          neighborCol >= 0 && neighborCol < this.gridSizeColumns) {
+        // Skip if it's the last row and an odd column (gap tile)
+        if (neighborRow === this.gridSizeRows - 1 && neighborCol % 2 === 1) {
+          continue;
+        }
+        
+        if (this.tiles[neighborRow] && this.tiles[neighborRow][neighborCol]) {
+          this.tiles[neighborRow][neighborCol].setSilverBorder();
+        }
+      }
+    }
   }
 
   update() {
