@@ -430,13 +430,19 @@ export class HexTile extends Phaser.GameObjects.Container {
     // Get all neighboring tiles
     const neighbors = this.getNeighboringTiles();
     
-    // Highlight empty tiles (tiles not owned by any player)
+    // Highlight valid move destinations:
+    // 1. Empty tiles (tiles not owned by any player) - for territory expansion
+    // 2. Tiles owned by current user (same color) - for resource transfer
     for (const neighbor of neighbors) {
       const tileKey = `${neighbor.tileIndexX},${neighbor.tileIndexY}`;
       const isOwnedByCurrentUser = HexTile.players[HexTile.currentUserColorIndex]?.tiles.has(tileKey);
+      const isSameColor = neighbor.originalColorIndex === HexTile.currentUserColorIndex;
+      const isEmpty = neighbor.originalColorIndex === null;
       
-      // Show as valid move if it's an empty tile (not owned by current user)
-      if (!isOwnedByCurrentUser) {
+      // Show as valid move if:
+      // - It's an empty tile (for territory expansion), OR
+      // - It's the same color as current user (for resource transfer) and not the selected tile itself
+      if (isEmpty || (isSameColor && neighbor !== this)) {
         neighbor.startValidMoveAnimation();
         HexTile.validMoveTiles.add(neighbor);
       }
