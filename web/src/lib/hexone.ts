@@ -143,6 +143,67 @@ export const IDL: Idl = {
           "type": "u16"
         }
       ]
+    },
+    {
+      "name": "attackTile",
+      "accounts": [
+        {
+          "name": "wallet",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "player",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "game",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "defender",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "attackerTileIndex",
+          "type": "u16"
+        },
+        {
+          "name": "defenderTileIndex",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "resolveAttack",
+      "accounts": [
+        {
+          "name": "game",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "defender",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "destination",
+          "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": []
     }
   ],
   "accounts": [
@@ -306,6 +367,64 @@ export const IDL: Idl = {
             "name": "_padding",
             "type": {
               "array": ["u8", 5]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Defender",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "game",
+            "type": "publicKey"
+          },
+          {
+            "name": "defenderTileIndex",
+            "type": "u16"
+          },
+          {
+            "name": "defenderTileColor",
+            "type": "u8"
+          },
+          {
+            "name": "attackerTileIndex",
+            "type": "u16"
+          },
+          {
+            "name": "attackerTileColor",
+            "type": "u8"
+          },
+          {
+            "name": "attackStartedAt",
+            "type": "i64"
+          },
+          {
+            "name": "isAttackResolved",
+            "type": "bool"
+          },
+          {
+            "name": "attackerWon",
+            "type": "bool"
+          },
+          {
+            "name": "attackingResult",
+            "type": "u16"
+          },
+          {
+            "name": "defendingResult",
+            "type": "u16"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "_padding",
+            "type": {
+              "array": ["u8", 3]
             }
           }
         ]
@@ -494,6 +613,64 @@ export const IDL: Idl = {
           {
             "name": "resourceCount",
             "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Defender",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "game",
+            "type": "publicKey"
+          },
+          {
+            "name": "defenderTileIndex",
+            "type": "u16"
+          },
+          {
+            "name": "defenderTileColor",
+            "type": "u8"
+          },
+          {
+            "name": "attackerTileIndex",
+            "type": "u16"
+          },
+          {
+            "name": "attackerTileColor",
+            "type": "u8"
+          },
+          {
+            "name": "attackStartedAt",
+            "type": "i64"
+          },
+          {
+            "name": "isAttackResolved",
+            "type": "bool"
+          },
+          {
+            "name": "attackerWon",
+            "type": "bool"
+          },
+          {
+            "name": "attackingResult",
+            "type": "u16"
+          },
+          {
+            "name": "defendingResult",
+            "type": "u16"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "_padding",
+            "type": {
+              "array": ["u8", 3]
+            }
           }
         ]
       }
@@ -875,6 +1052,144 @@ export class HexoneClient {
     } catch (error) {
       console.error('Error in moveResources:', error);
       throw error;
+    }
+  }
+
+  async attackTile(
+    game: PublicKey,
+    attackerTileIndex: number,
+    defenderTileIndex: number
+  ): Promise<string> {
+    if (!this.provider?.wallet.publicKey) {
+      throw new Error('Wallet not connected');
+    }
+
+    try {
+      // Find player PDA
+      const [playerPda] = await PublicKey.findProgramAddress(
+        [Buffer.from('player'), this.provider.wallet.publicKey.toBuffer()],
+        this.programId
+      );
+
+      // Find defender PDA
+      const defenderTileBuffer = Buffer.alloc(2);
+      defenderTileBuffer.writeUInt16LE(defenderTileIndex, 0);
+      const [defenderPda] = await PublicKey.findProgramAddress(
+        [
+          Buffer.from('defender'),
+          game.toBuffer(),
+          defenderTileBuffer
+        ],
+        this.programId
+      );
+
+      // Ensure values are within u16 range (0-65535)
+      const attackerTileIndexU16 = Math.max(0, Math.min(65535, attackerTileIndex));
+      const defenderTileIndexU16 = Math.max(0, Math.min(65535, defenderTileIndex));
+
+      const tx = await this.program.methods
+        .attackTile(
+          attackerTileIndexU16,
+          defenderTileIndexU16
+        )
+        .accounts({
+          wallet: this.provider.wallet.publicKey,
+          player: playerPda,
+          game: game,
+          defender: defenderPda,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      console.log('Attack tile transaction:', tx);
+      return tx;
+    } catch (error) {
+      console.error('Error in attackTile:', error);
+      throw error;
+    }
+  }
+
+  async resolveAttack(
+    game: PublicKey,
+    defenderTileIndex: number,
+    destination: PublicKey
+  ): Promise<string> {
+    if (!this.provider?.wallet.publicKey) {
+      throw new Error('Wallet not connected');
+    }
+
+    try {
+      // Find defender PDA
+      const defenderTileBuffer = Buffer.alloc(2);
+      defenderTileBuffer.writeUInt16LE(defenderTileIndex, 0);
+      const [defenderPda] = await PublicKey.findProgramAddress(
+        [
+          Buffer.from('defender'),
+          game.toBuffer(),
+          defenderTileBuffer
+        ],
+        this.programId
+      );
+
+      const tx = await this.program.methods
+        .resolveAttack()
+        .accounts({
+          game: game,
+          defender: defenderPda,
+          destination: destination,
+        })
+        .rpc();
+
+      console.log('Resolve attack transaction:', tx);
+      return tx;
+    } catch (error) {
+      console.error('Error in resolveAttack:', error);
+      throw error;
+    }
+  }
+
+  async fetchDefender(
+    game: PublicKey,
+    defenderTileIndex: number
+  ): Promise<any | null> {
+    try {
+      // Find defender PDA
+      const defenderTileBuffer = Buffer.alloc(2);
+      defenderTileBuffer.writeUInt16LE(defenderTileIndex, 0);
+      const [defenderPda] = await PublicKey.findProgramAddress(
+        [
+          Buffer.from('defender'),
+          game.toBuffer(),
+          defenderTileBuffer
+        ],
+        this.programId
+      );
+
+      console.log('Fetching defender account:', {
+        defenderPda: defenderPda.toString(),
+        defenderTileIndex,
+        game: game.toString()
+      });
+
+      // Check if account exists first
+      const accountInfo = await this.connection.getAccountInfo(defenderPda);
+      if (!accountInfo) {
+        console.log('Defender account does not exist');
+        return null;
+      }
+
+      const defender = await this.program.account.defender.fetch(defenderPda);
+      console.log('Defender account fetched successfully:', {
+        attackerTileIndex: defender.attackerTileIndex,
+        defenderTileIndex: defender.defenderTileIndex,
+        isAttackResolved: defender.isAttackResolved,
+        attackStartedAt: defender.attackStartedAt
+      });
+      return defender;
+    } catch (error: any) {
+      // Account doesn't exist or error fetching
+      console.log('Error fetching defender account:', error?.message || error);
+      return null;
     }
   }
 

@@ -22,8 +22,10 @@ export class HexTile extends Phaser.GameObjects.Container {
   static playerColorIndex: number = 0;
   static selectedTile: HexTile | null = null;
   static validMoveTiles: Set<HexTile> = new Set();
+  static validAttackTiles: Set<HexTile> = new Set(); // Tiles that can be attacked
   static currentUserColorIndex: number | null = null; // Color index of the connected player (the one with "YOU")
   static onMoveResources: ((sourceTileIndex: number, destinationTileIndex: number, resourcesToMove: number) => Promise<void>) | null = null;
+  static onAttackTile: ((attackerTileIndex: number, defenderTileIndex: number) => Promise<void>) | null = null;
   static moveAllResources: boolean = false; // Whether to move all resources except 1
 
   constructor(config: HexTileConfig) {
@@ -86,6 +88,10 @@ export class HexTile extends Phaser.GameObjects.Container {
 
   static setOnMoveResources(callback: ((sourceTileIndex: number, destinationTileIndex: number, resourcesToMove: number) => Promise<void>) | null) {
     HexTile.onMoveResources = callback;
+  }
+
+  static setOnAttackTile(callback: ((attackerTileIndex: number, defenderTileIndex: number) => Promise<void>) | null) {
+    HexTile.onAttackTile = callback;
   }
 
   static setMoveAllResources(value: boolean) {
@@ -168,6 +174,11 @@ export class HexTile extends Phaser.GameObjects.Container {
     this.hex.setFillStyle(COLORS.DARK_GREEN);
   }
 
+  startValidAttackAnimation() {
+    // Red border only, keep original fill color
+    this.hex.setStrokeStyle(3, COLORS.RED);
+  }
+
   clearValidMoves() {
     // Restore original color if tile has one, otherwise use default
     if (this.originalColorIndex !== null) {
@@ -180,9 +191,83 @@ export class HexTile extends Phaser.GameObjects.Container {
     }
   }
 
+  clearValidAttacks() {
+    // Restore original stroke, keep fill color
+    if (this.originalColorIndex !== null) {
+      this.hex.setStrokeStyle(1, COLORS.WHITE);
+    } else {
+      this.hex.setStrokeStyle(1, COLORS.GRAY);
+    }
+  }
+
   onTileClick() {
     // Only allow interactions if there's a current user (someone with "YOU" label)
     if (HexTile.currentUserColorIndex === null) {
+      return;
+    }
+
+    // Handle attack clicks
+    if (HexTile.validAttackTiles.has(this)) {
+      // Handle attack - send attack transaction
+      if (HexTile.selectedTile && HexTile.onAttackTile) {
+        const selectedTile = HexTile.selectedTile;
+        const clickedTile = this;
+        
+        const sourceX = selectedTile.tileIndexX;
+        const sourceY = selectedTile.tileIndexY;
+        const destX = clickedTile.tileIndexX;
+        const destY = clickedTile.tileIndexY;
+        
+        if (sourceX === undefined || sourceY === undefined || destX === undefined || destY === undefined) {
+          console.error('ERROR: Tile coordinates are undefined!');
+          return;
+        }
+        
+        if (typeof sourceX !== 'number' || typeof sourceY !== 'number' || 
+            typeof destX !== 'number' || typeof destY !== 'number') {
+          console.error('ERROR: Tile coordinates are not numbers!');
+          return;
+        }
+        
+        const scene = this.scene as any;
+        const MainSceneClass = (scene.constructor as any);
+        const gameData = MainSceneClass.gameData;
+        const columns = gameData?.columns || scene.gridSizeColumns || 13;
+        
+        if (!columns || columns === 0 || typeof columns !== 'number') {
+          console.error('ERROR: Invalid columns value!');
+          return;
+        }
+        
+        const sourceTileIndex = sourceY * columns + sourceX;
+        const destinationTileIndex = destY * columns + destX;
+        
+        console.log('Attack click - calculating indices:', {
+          source: { x: sourceX, y: sourceY, index: sourceTileIndex },
+          destination: { x: destX, y: destY, index: destinationTileIndex },
+          columns
+        });
+        
+        // Check that selected tile has at least 2 resources (required for attack)
+        if (selectedTile.resources >= 2) {
+          HexTile.onAttackTile(sourceTileIndex, destinationTileIndex)
+            .then(() => {
+              // Clear selection and valid moves/attacks after successful transaction
+              selectedTile.clearSelection();
+              HexTile.selectedTile = null;
+              HexTile.validMoveTiles.forEach(tile => tile.clearValidMoves());
+              HexTile.validMoveTiles.clear();
+              HexTile.validAttackTiles.forEach(tile => tile.clearValidAttacks());
+              HexTile.validAttackTiles.clear();
+            })
+            .catch((error) => {
+              console.error('Error attacking tile:', error);
+              // Don't clear selection on error - let user try again
+            });
+        } else {
+          console.warn('Selected tile does not have enough resources to attack (need at least 2)');
+        }
+      }
       return;
     }
 
@@ -286,6 +371,8 @@ export class HexTile extends Phaser.GameObjects.Container {
               HexTile.selectedTile = null;
               HexTile.validMoveTiles.forEach(tile => tile.clearValidMoves());
               HexTile.validMoveTiles.clear();
+              HexTile.validAttackTiles.forEach(tile => tile.clearValidAttacks());
+              HexTile.validAttackTiles.clear();
             })
             .catch((error) => {
               console.error('Error moving resources:', error);
@@ -307,17 +394,24 @@ export class HexTile extends Phaser.GameObjects.Container {
           // Clear valid move highlights on all neighboring tiles
           HexTile.validMoveTiles.forEach(tile => tile.clearValidMoves());
           HexTile.validMoveTiles.clear();
+          // Clear valid attack highlights
+          HexTile.validAttackTiles.forEach(tile => tile.clearValidAttacks());
+          HexTile.validAttackTiles.clear();
         } else {
           // Selecting a new tile: clear previous selection and show valid moves
           if (HexTile.selectedTile) {
             HexTile.selectedTile.clearSelection();
-            // Clear previous valid move highlights
-            HexTile.validMoveTiles.forEach(tile => tile.clearValidMoves());
-            HexTile.validMoveTiles.clear();
-          }
-          this.startSelectionAnimation();
-          HexTile.selectedTile = this;
-          this.showValidMoves();
+          // Clear previous valid move highlights
+          HexTile.validMoveTiles.forEach(tile => tile.clearValidMoves());
+          HexTile.validMoveTiles.clear();
+          // Clear previous valid attack highlights
+          HexTile.validAttackTiles.forEach(tile => tile.clearValidAttacks());
+          HexTile.validAttackTiles.clear();
+        }
+        this.startSelectionAnimation();
+        HexTile.selectedTile = this;
+        this.showValidMoves();
+        this.showValidAttacks();
         }
       }
     }
@@ -345,6 +439,34 @@ export class HexTile extends Phaser.GameObjects.Container {
       if (!isOwnedByCurrentUser) {
         neighbor.startValidMoveAnimation();
         HexTile.validMoveTiles.add(neighbor);
+      }
+    }
+  }
+
+  private showValidAttacks() {
+    // Only show valid attacks if there's a current user
+    if (HexTile.currentUserColorIndex === null) {
+      return;
+    }
+
+    // Clear any existing valid attack highlights
+    HexTile.validAttackTiles.forEach(tile => tile.clearValidAttacks());
+    HexTile.validAttackTiles.clear();
+
+    // Get all neighboring tiles
+    const neighbors = this.getNeighboringTiles();
+    
+    // Highlight tiles owned by other players (can be attacked)
+    for (const neighbor of neighbors) {
+      const tileKey = `${neighbor.tileIndexX},${neighbor.tileIndexY}`;
+      const isOwnedByCurrentUser = HexTile.players[HexTile.currentUserColorIndex]?.tiles.has(tileKey);
+      
+      // Check if neighbor is owned by another player (has a color but not current user's color)
+      if (neighbor.originalColorIndex !== null && 
+          neighbor.originalColorIndex !== HexTile.currentUserColorIndex &&
+          !isOwnedByCurrentUser) {
+        neighbor.startValidAttackAnimation();
+        HexTile.validAttackTiles.add(neighbor);
       }
     }
   }

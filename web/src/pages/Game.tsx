@@ -8,6 +8,7 @@ import Phaser from 'phaser';
 import { MainScene } from '../components/game/MainScene';
 import { HexTile } from '../components/game/HexTile';
 import { UI } from '../components/game/UI';
+import { AttackPopup } from '../components/game/AttackPopup';
 import { INITIAL_RESOURCES, RESOURCE_REFRESH_RATE, RESOURCES_PER_REFRESH, GRID_CONFIG } from '../components/game/constants';
 
 const Game: React.FC = () => {
@@ -28,6 +29,28 @@ const Game: React.FC = () => {
   const [availableResources, setAvailableResources] = useState(INITIAL_RESOURCES);
   const [countdownSeconds, setCountdownSeconds] = useState(RESOURCE_REFRESH_RATE);
   const [joiningGame, setJoiningGame] = useState(false);
+  
+  // Attack popup state
+  const [attackPopupOpen, setAttackPopupOpen] = useState(false);
+  const [attackData, setAttackData] = useState<{
+    attackerTileIndex: number;
+    defenderTileIndex: number;
+    attackerColor: number;
+    defenderColor: number;
+    attackerResources: number;
+    defenderResources: number;
+    attackerTileX: number;
+    attackerTileY: number;
+    defenderTileX: number;
+    defenderTileY: number;
+    attackStartedAt: number;
+  } | null>(null);
+  const [attackResolved, setAttackResolved] = useState(false);
+  const [attackResult, setAttackResult] = useState<{
+    attackerWon: boolean;
+    newAttackerResources: number;
+    newDefenderResources: number;
+  } | null>(null);
   
   // Set up HexoneClient - same pattern as SiclubClient
   const client = useMemo(() => {
@@ -398,9 +421,227 @@ const Game: React.FC = () => {
           throw err;
         }
       });
+
+      // Set up the attack tile callback
+      HexTile.setOnAttackTile(async (attackerTileIndex: number, defenderTileIndex: number) => {
+        if (!client || !wallet.publicKey || !game) {
+          throw new Error('Wallet not connected or game not loaded');
+        }
+
+        console.log('Checking for existing attack:', {
+          attackerTileIndex,
+          defenderTileIndex,
+          gameColumns: game.columns,
+          gameRows: game.rows
+        });
+
+        // Validate indices
+        if (typeof attackerTileIndex !== 'number' || isNaN(attackerTileIndex)) {
+          throw new Error(`Invalid attackerTileIndex: ${attackerTileIndex}`);
+        }
+        if (typeof defenderTileIndex !== 'number' || isNaN(defenderTileIndex)) {
+          throw new Error(`Invalid defenderTileIndex: ${defenderTileIndex}`);
+        }
+
+        try {
+          if (!client) {
+            throw new Error('Client not initialized');
+          }
+
+          // Get tile data
+          const attackerTile = game.tileData[attackerTileIndex];
+          const defenderTile = game.tileData[defenderTileIndex];
+          
+          if (!attackerTile || !defenderTile) {
+            throw new Error('Invalid tile indices');
+          }
+
+          // Convert color from 1-4 to 0-3 index
+          const attackerColor = attackerTile.color - 1;
+          const defenderColor = defenderTile.color - 1;
+
+          // Check if there's an existing defender account (ongoing attack)
+          // This MUST happen before attempting to create a new attack
+          // Use the exact same PDA calculation method as hexone.ts
+          console.log('Checking for existing defender account for tile:', defenderTileIndex);
+          
+          let existingDefender = null;
+          try {
+            // Use the exact same PDA calculation as in hexone.ts attackTile method
+            const defenderTileBuffer = Buffer.alloc(2);
+            defenderTileBuffer.writeUInt16LE(defenderTileIndex, 0);
+            const [defenderPda] = await PublicKey.findProgramAddress(
+              [
+                Buffer.from('defender'),
+                game.publicKey.toBuffer(),
+                defenderTileBuffer
+              ],
+              client.getProgram().programId
+            );
+
+            console.log('Defender PDA calculated (using hexone.ts method):', defenderPda.toString());
+
+            // Check if account data is not null using connection directly
+            const accountInfo = await connection.getAccountInfo(defenderPda);
+            console.log('Account info *************  :', accountInfo);
+
+            if (accountInfo && accountInfo.data !== null) {
+              console.log('✅ Defender account exists! Account data is not null. Fetching...');
+              // Account exists, fetch it
+              const defenderData = await client.getProgram().account.defender.fetch(defenderPda);
+              existingDefender = defenderData as any;
+              console.log('✅ Defender account fetched successfully:', {
+                attackerTileIndex: existingDefender.attackerTileIndex,
+                defenderTileIndex: existingDefender.defenderTileIndex,
+                isAttackResolved: existingDefender.isAttackResolved,
+                attackStartedAt: existingDefender.attackStartedAt,
+                attackerTileColor: existingDefender.attackerTileColor,
+                defenderTileColor: existingDefender.defenderTileColor
+              });
+            } else {
+              console.log('❌ Defender account does not exist or data is null at PDA:', defenderPda.toString());
+            }
+          } catch (error: any) {
+            console.error('❌ Error checking defender account:', error?.message || error);
+            // Account doesn't exist or error - continue with new attack
+          }
+          
+          console.log('Defender account check result:', {
+            exists: !!existingDefender,
+            isResolved: existingDefender?.isAttackResolved,
+            checkingTileIndex: defenderTileIndex,
+            attackerTileIndex: existingDefender?.attackerTileIndex,
+            defenderTileIndex: existingDefender?.defenderTileIndex,
+            attackStartedAt: existingDefender?.attackStartedAt
+          });
+
+          // If defender account exists, show popup and do NOT send another attack tx
+          if (existingDefender) {
+            if (existingDefender.isAttackResolved) {
+              console.log('Defender account exists but is already resolved - proceeding with new attack');
+              // If resolved, we can proceed with a new attack
+            } else {
+              console.log('✅ Existing unresolved attack found - showing popup, NOT sending new attack transaction');
+              
+              // Type assert to ensure we have the right types
+              const defender = existingDefender as {
+                attackerTileIndex: number;
+                defenderTileIndex: number;
+                attackerTileColor: number;
+                defenderTileColor: number;
+                attackStartedAt: number;
+                isAttackResolved: boolean;
+              };
+
+              // Calculate tile coordinates
+              const attackerX = defender.attackerTileIndex % game.columns;
+              const attackerY = Math.floor(defender.attackerTileIndex / game.columns);
+              const defenderX = defender.defenderTileIndex % game.columns;
+              const defenderY = Math.floor(defender.defenderTileIndex / game.columns);
+
+              // Get current tile data (resources may have changed)
+              const currentAttackerTile = game.tileData[defender.attackerTileIndex];
+              const currentDefenderTile = game.tileData[defender.defenderTileIndex];
+
+              if (!currentAttackerTile || !currentDefenderTile) {
+                console.error('Could not find tile data for existing attack:', {
+                  attackerTileIndex: defender.attackerTileIndex,
+                  defenderTileIndex: defender.defenderTileIndex
+                });
+                // Still show popup even if tile data is missing
+              }
+
+              // Convert colors from 1-4 to 0-3 index
+              const existingAttackerColor = defender.attackerTileColor - 1;
+              const existingDefenderColor = defender.defenderTileColor - 1;
+
+              // Set up attack popup data with existing attack
+              const popupData = {
+                attackerTileIndex: defender.attackerTileIndex,
+                defenderTileIndex: defender.defenderTileIndex,
+                attackerColor: existingAttackerColor,
+                defenderColor: existingDefenderColor,
+                attackerResources: currentAttackerTile?.resourceCount || 0,
+                defenderResources: currentDefenderTile?.resourceCount || 0,
+                attackerTileX: attackerX,
+                attackerTileY: attackerY,
+                defenderTileX: defenderX,
+                defenderTileY: defenderY,
+                attackStartedAt: defender.attackStartedAt
+              };
+
+              console.log('Setting attack popup data:', popupData);
+              setAttackData(popupData);
+              setAttackPopupOpen(true);
+              setAttackResolved(false);
+              setAttackResult(null);
+              
+              console.log('✅ Popup should now be visible - returning early to prevent new attack transaction');
+              return; // Do NOT send another attack transaction
+            }
+          } else {
+            console.log('No existing defender account found - proceeding with new attack');
+          }
+
+          // No existing attack or attack was resolved - proceed with new attack
+          console.log('Sending attackTile transaction:', {
+            attackerTileIndex,
+            defenderTileIndex
+          });
+
+          // Calculate tile coordinates
+          const attackerX = attackerTileIndex % game.columns;
+          const attackerY = Math.floor(attackerTileIndex / game.columns);
+          const defenderX = defenderTileIndex % game.columns;
+          const defenderY = Math.floor(defenderTileIndex / game.columns);
+
+          // Send attack transaction
+          const tx = await client.attackTile(
+            game.publicKey,
+            attackerTileIndex,
+            defenderTileIndex
+          );
+
+          // Wait for transaction confirmation
+          await connection.confirmTransaction(tx);
+
+          // Fetch defender account to get attack start time
+          let attackStartedAt = Math.floor(Date.now() / 1000);
+          try {
+            const defender = await client.fetchDefender(game.publicKey, defenderTileIndex);
+            if (defender && defender.attackStartedAt) {
+              attackStartedAt = defender.attackStartedAt;
+            }
+          } catch (error) {
+            console.error('Error fetching defender account:', error);
+          }
+
+          // Set up attack popup data
+          setAttackData({
+            attackerTileIndex,
+            defenderTileIndex,
+            attackerColor,
+            defenderColor,
+            attackerResources: attackerTile.resourceCount,
+            defenderResources: defenderTile.resourceCount,
+            attackerTileX: attackerX,
+            attackerTileY: attackerY,
+            defenderTileX: defenderX,
+            defenderTileY: defenderY,
+            attackStartedAt
+          });
+          setAttackPopupOpen(true);
+          setAttackResolved(false);
+          setAttackResult(null);
+        } catch (err) {
+          console.error('Error in attack tile transaction:', err);
+          throw err;
+        }
+      });
     } else {
-      // Clear callback if no game
+      // Clear callbacks if no game
       HexTile.setOnMoveResources(null);
+      HexTile.setOnAttackTile(null);
     }
   }, [game, wallet.publicKey, connection, client, fetchGame, moveAllResources]);
 
@@ -542,6 +783,102 @@ const Game: React.FC = () => {
           joiningGame={joiningGame}
         />
       </div>
+
+      {/* Attack Popup */}
+      {attackPopupOpen && attackData && (
+        <AttackPopup
+          isOpen={attackPopupOpen}
+          onClose={() => {
+            setAttackPopupOpen(false);
+            setAttackData(null);
+            setAttackResolved(false);
+            setAttackResult(null);
+            // Refresh game data after closing
+            fetchGame();
+          }}
+          attackerTileIndex={attackData.attackerTileIndex}
+          defenderTileIndex={attackData.defenderTileIndex}
+          attackerColor={attackData.attackerColor}
+          defenderColor={attackData.defenderColor}
+          attackerResources={attackData.attackerResources}
+          defenderResources={attackData.defenderResources}
+          attackerTileX={attackData.attackerTileX}
+          attackerTileY={attackData.attackerTileY}
+          defenderTileX={attackData.defenderTileX}
+          defenderTileY={attackData.defenderTileY}
+          attackStartedAt={attackData.attackStartedAt}
+          isResolved={attackResolved}
+          attackerWon={attackResult?.attackerWon}
+          newAttackerResources={
+            attackResult && game
+              ? game.tileData[attackData.attackerTileIndex]?.resourceCount
+              : undefined
+          }
+          newDefenderResources={
+            attackResult && game
+              ? game.tileData[attackData.defenderTileIndex]?.resourceCount
+              : undefined
+          }
+          onResolveAttack={async () => {
+            if (!client || !wallet.publicKey || !game || !attackData) {
+              throw new Error('Wallet not connected or game not loaded');
+            }
+
+            try {
+              // Resolve attack - use wallet as destination for rent
+              const tx = await client.resolveAttack(
+                game.publicKey,
+                attackData.defenderTileIndex,
+                wallet.publicKey
+              );
+
+              // Wait for transaction confirmation
+              await connection.confirmTransaction(tx);
+
+              // Fetch updated game data to get new resource counts
+              await fetchGame();
+
+              // Update attack result
+              const updatedGame = await client.fetchGame(game.publicKey.toString());
+              if (updatedGame) {
+                const newAttackerResources = updatedGame.tileData[attackData.attackerTileIndex]?.resourceCount || 0;
+                const newDefenderResources = updatedGame.tileData[attackData.defenderTileIndex]?.resourceCount || 0;
+                const newDefenderColor = updatedGame.tileData[attackData.defenderTileIndex]?.color || 0;
+                
+                // Determine winner based on game state changes:
+                // 1. If defender tile color changed to attacker's color, attacker won
+                // 2. If defender resources decreased, attacker won
+                // 3. Otherwise, defender won (attacker resources decreased)
+                let attackerWon = false;
+                const attackerColorValue = attackData.attackerColor + 1; // Convert 0-3 to 1-4
+                if (newDefenderColor === attackerColorValue && newDefenderColor !== (attackData.defenderColor + 1)) {
+                  // Defender tile was taken by attacker
+                  attackerWon = true;
+                } else if (newDefenderResources < attackData.defenderResources) {
+                  // Defender lost resources
+                  attackerWon = true;
+                } else if (newAttackerResources < attackData.attackerResources) {
+                  // Attacker lost resources
+                  attackerWon = false;
+                } else {
+                  // Default: check if defender resources decreased (shouldn't happen, but fallback)
+                  attackerWon = newDefenderResources < attackData.defenderResources;
+                }
+
+                setAttackResolved(true);
+                setAttackResult({
+                  attackerWon,
+                  newAttackerResources,
+                  newDefenderResources
+                });
+              }
+            } catch (err) {
+              console.error('Error resolving attack:', err);
+              throw err;
+            }
+          }}
+        />
+      )}
     </div>
   );
 };
