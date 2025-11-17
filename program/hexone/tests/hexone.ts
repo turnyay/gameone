@@ -7,6 +7,9 @@ import { expect } from "chai";
 // Program ID from Anchor.toml
 const PROGRAM_ID = new PublicKey("D3sXMGZYUNN3DeQr2tUSKjgN8qYXcRHPCSSaJMAPUFzP");
 
+// Game constants
+const RESOURCES_PER_MINUTE = 10;
+
 describe("hexone", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
@@ -580,6 +583,178 @@ describe("hexone", () => {
       console.log("Attack test completed!");
     } catch (error) {
       console.error("Error in attack test:", error);
+      throw error;
+    }
+  });
+
+  it("Add Resources - Wait 60s and add resources to starting tiles for each player", async () => {
+    try {
+      // Get initial game state
+      let gameAccount = await program.account.game.fetch(gamePDA);
+      
+      // Starting tiles for each player (from create_game):
+      // Player 1 (Red, color 1): tile 0 (top left)
+      // Player 2 (Yellow, color 2): tile 12 (top right, columns - 1 = 13 - 1 = 12)
+      // Player 3 (Green, color 3): tile 130 (bottom left, (rows - 1) * columns = 10 * 13 = 130)
+      // Player 4 (Blue, color 4): tile 142 (bottom right, (rows * columns) - 1 = 11 * 13 - 1 = 142)
+      const startingTiles = {
+        player1: 0,
+        player2: 12,
+        player3: 130,
+        player4: 142,
+      };
+
+      // Get initial resource counts on starting tiles
+      const initialResources = {
+        player1: gameAccount.tileData[startingTiles.player1].resourceCount,
+        player2: gameAccount.tileData[startingTiles.player2].resourceCount,
+        player3: gameAccount.tileData[startingTiles.player3].resourceCount,
+        player4: gameAccount.tileData[startingTiles.player4].resourceCount,
+      };
+
+      console.log("Initial resources on starting tiles:");
+      console.log(`  Player 1 (tile ${startingTiles.player1}): ${initialResources.player1}`);
+      console.log(`  Player 2 (tile ${startingTiles.player2}): ${initialResources.player2}`);
+      console.log(`  Player 3 (tile ${startingTiles.player3}): ${initialResources.player3}`);
+      console.log(`  Player 4 (tile ${startingTiles.player4}): ${initialResources.player4}`);
+
+      // Get initial total available resources
+      // totalResourcesAvailable is a u32, so it's already a number (not BN)
+      const getNumber = (value: any): number => {
+        return typeof value === 'number' ? value : value.toNumber();
+      };
+      
+      const initialTotalAvailable = getNumber(gameAccount.totalResourcesAvailable);
+
+      console.log("Initial total available resources:");
+      console.log(`  Total: ${initialTotalAvailable}`);
+
+      // Wait 60 seconds for resources to accumulate
+      console.log("\nWaiting 60 seconds for resources to accumulate...");
+      const startTime = Date.now();
+      await new Promise(resolve => setTimeout(resolve, 60000));
+      const elapsed = Date.now() - startTime;
+      console.log(`60 seconds elapsed (actual wait: ${elapsed}ms), proceeding with adding resources...`);
+
+      // After 60 seconds, total_resources_available should be RESOURCES_PER_MINUTE (10)
+      // This is the amount each player can add (per player), not multiplied by number of players
+      // Each player can spend up to 10 resources if (their_spent + 10) <= total_resources_available
+      // Since total_resources_available only goes up, it will stay at 10 after spending
+      const resourcesToAdd = RESOURCES_PER_MINUTE; // Each player tries to spend 10 resources
+
+      // Player 1 adds resources
+      console.log(`\nPlayer 1 adding ${resourcesToAdd} resources to tile ${startingTiles.player1}...`);
+      const tx1 = await program.methods
+        .addResources(startingTiles.player1, new anchor.BN(resourcesToAdd))
+        .accounts({
+          wallet: player1.publicKey,
+          player: player1PDA,
+          game: gamePDA,
+        })
+        .signers([player1])
+        .rpc();
+      console.log("Player 1 add resources tx:", tx1);
+      await provider.connection.confirmTransaction(tx1);
+
+      // Player 2 adds resources
+      console.log(`Player 2 adding ${resourcesToAdd} resources to tile ${startingTiles.player2}...`);
+      const tx2 = await program.methods
+        .addResources(startingTiles.player2, new anchor.BN(resourcesToAdd))
+        .accounts({
+          wallet: player2.publicKey,
+          player: player2PDA,
+          game: gamePDA,
+        })
+        .signers([player2])
+        .rpc();
+      console.log("Player 2 add resources tx:", tx2);
+      await provider.connection.confirmTransaction(tx2);
+
+      // Player 3 adds resources
+      console.log(`Player 3 adding ${resourcesToAdd} resources to tile ${startingTiles.player3}...`);
+      const tx3 = await program.methods
+        .addResources(startingTiles.player3, new anchor.BN(resourcesToAdd))
+        .accounts({
+          wallet: player3.publicKey,
+          player: player3PDA,
+          game: gamePDA,
+        })
+        .signers([player3])
+        .rpc();
+      console.log("Player 3 add resources tx:", tx3);
+      await provider.connection.confirmTransaction(tx3);
+
+      // Player 4 adds resources
+      console.log(`Player 4 adding ${resourcesToAdd} resources to tile ${startingTiles.player4}...`);
+      const tx4 = await program.methods
+        .addResources(startingTiles.player4, new anchor.BN(resourcesToAdd))
+        .accounts({
+          wallet: player4.publicKey,
+          player: player4PDA,
+          game: gamePDA,
+        })
+        .signers([player4])
+        .rpc();
+      console.log("Player 4 add resources tx:", tx4);
+      await provider.connection.confirmTransaction(tx4);
+
+      // Verify final state
+      gameAccount = await program.account.game.fetch(gamePDA);
+
+      const finalResources = {
+        player1: gameAccount.tileData[startingTiles.player1].resourceCount,
+        player2: gameAccount.tileData[startingTiles.player2].resourceCount,
+        player3: gameAccount.tileData[startingTiles.player3].resourceCount,
+        player4: gameAccount.tileData[startingTiles.player4].resourceCount,
+      };
+
+      const finalTotalAvailable = getNumber(gameAccount.totalResourcesAvailable);
+
+      const finalSpent = {
+        player1: getNumber(gameAccount.resourcesSpentPlayer1),
+        player2: getNumber(gameAccount.resourcesSpentPlayer2),
+        player3: getNumber(gameAccount.resourcesSpentPlayer3),
+        player4: getNumber(gameAccount.resourcesSpentPlayer4),
+      };
+
+      console.log("\n=== Final State ===");
+      console.log("Resources on starting tiles:");
+      console.log(`  Player 1 (tile ${startingTiles.player1}): ${finalResources.player1} (was ${initialResources.player1}, added ${resourcesToAdd})`);
+      console.log(`  Player 2 (tile ${startingTiles.player2}): ${finalResources.player2} (was ${initialResources.player2}, added ${resourcesToAdd})`);
+      console.log(`  Player 3 (tile ${startingTiles.player3}): ${finalResources.player3} (was ${initialResources.player3}, added ${resourcesToAdd})`);
+      console.log(`  Player 4 (tile ${startingTiles.player4}): ${finalResources.player4} (was ${initialResources.player4}, added ${resourcesToAdd})`);
+
+      console.log("\nTotal available resources:");
+      console.log(`  Total: ${finalTotalAvailable} (was ${initialTotalAvailable})`);
+
+      console.log("\nSpent resources:");
+      console.log(`  Player 1: ${finalSpent.player1}`);
+      console.log(`  Player 2: ${finalSpent.player2}`);
+      console.log(`  Player 3: ${finalSpent.player3}`);
+      console.log(`  Player 4: ${finalSpent.player4}`);
+
+      // Verify resources were added to tiles
+      expect(finalResources.player1).to.equal(initialResources.player1 + resourcesToAdd);
+      expect(finalResources.player2).to.equal(initialResources.player2 + resourcesToAdd);
+      expect(finalResources.player3).to.equal(initialResources.player3 + resourcesToAdd);
+      expect(finalResources.player4).to.equal(initialResources.player4 + resourcesToAdd);
+
+      // Verify total available resources
+      // After 60 seconds: 10 resources added (RESOURCES_PER_MINUTE, per player amount)
+      // total_resources_available only goes up, never down
+      // Each player spent 10, but total_resources_available stays at 10 (not decremented)
+      // Final = initial (0) + calculated (10) = 10 (not decremented by spending)
+      expect(finalTotalAvailable).to.equal(10);
+
+      // Verify spent resources were tracked
+      expect(finalSpent.player1).to.equal(resourcesToAdd);
+      expect(finalSpent.player2).to.equal(resourcesToAdd);
+      expect(finalSpent.player3).to.equal(resourcesToAdd);
+      expect(finalSpent.player4).to.equal(resourcesToAdd);
+
+      console.log("\n✓ All verifications passed!");
+    } catch (error) {
+      console.error("Error in add resources test:", error);
       throw error;
     }
   });

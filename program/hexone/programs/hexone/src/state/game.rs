@@ -18,8 +18,14 @@ pub struct Game {
     pub player4: Pubkey,
     // 8-byte aligned fields
     pub game_id: u64,
+    pub available_resources_timestamp: i64,
     // 4-byte aligned fields
     pub resources_per_minute: u32,
+    pub total_resources_available: u32,
+    pub resources_spent_player1: u32,
+    pub resources_spent_player2: u32,
+    pub resources_spent_player3: u32,
+    pub resources_spent_player4: u32,
     // Array of TileData (4-byte aligned)
     pub tile_data: [TileData; 144],
     // 1-byte fields grouped together at the end
@@ -28,8 +34,8 @@ pub struct Game {
     pub columns: u8,
     pub version: u8,
     pub bump: u8,
-    // 7 bytes of padding to align to 8 bytes
-    pub _padding: [u8; 7]
+    // 3 bytes of padding to align to 8 bytes
+    pub _padding: [u8; 3]
 }
 
 impl Game {
@@ -40,10 +46,16 @@ impl Game {
         + 32                     // player3
         + 32                     // player4
         + 8                      // game_id
+        + 8                      // available_resources_timestamp
         + 4                      // resources_per_minute
+        + 4                      // total_resources_available
+        + 4                      // resources_spent_player1
+        + 4                      // resources_spent_player2
+        + 4                      // resources_spent_player3
+        + 4                      // resources_spent_player4
         + (144 * 4)              // tile_data (144 * 4)
         + 5                      // game_state + rows + columns + version + bump
-        + 7;                     // padding
+        + 3;                     // padding
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Pod, Zeroable)]

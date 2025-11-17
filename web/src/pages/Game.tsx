@@ -30,6 +30,7 @@ const Game: React.FC = () => {
     addResources: false
   });
   const [availableResources, setAvailableResources] = useState(INITIAL_RESOURCES);
+  const [simulatedTotalResources, setSimulatedTotalResources] = useState(0);
   const [countdownSeconds, setCountdownSeconds] = useState(RESOURCE_REFRESH_RATE);
   const [joiningGame, setJoiningGame] = useState(false);
   
@@ -73,11 +74,57 @@ const Game: React.FC = () => {
     fetchGame();
   }, [connection, gameId]);
 
+  // Update simulated total resources every minute based on timestamp
+  useEffect(() => {
+    if (!game) return;
+
+    const updateSimulatedResources = () => {
+      const gameData = game as any;
+      const totalResourcesAvailable = gameData.totalResourcesAvailable || 0;
+      const availableResourcesTimestamp = gameData.availableResourcesTimestamp || 0;
+      const resourcesPerMinute = gameData.resourcesPerMinute || 10;
+
+      const currentTime = Math.floor(Date.now() / 1000);
+      const timeDiff = currentTime - availableResourcesTimestamp;
+      
+      // Calculate simulated total: base total + (minutes elapsed * resources per minute)
+      let simulatedTotal = totalResourcesAvailable;
+      if (timeDiff > 60) {
+        const minutesElapsed = Math.floor(timeDiff / 60);
+        simulatedTotal = totalResourcesAvailable + (minutesElapsed * resourcesPerMinute);
+      }
+      setSimulatedTotalResources(simulatedTotal);
+
+      // Update available resources for current player
+      let playerResourcesSpent = 0;
+      if (wallet.publicKey) {
+        const gamePlayers = gameData.gamePlayers || [];
+        const currentPlayer = gamePlayers.find((p: any) => p && p.publicKey === wallet.publicKey?.toString());
+        if (currentPlayer) {
+          const playerIndex = currentPlayer.colorIndex;
+          if (playerIndex === 0) playerResourcesSpent = gameData.resourcesSpentPlayer1 || 0;
+          else if (playerIndex === 1) playerResourcesSpent = gameData.resourcesSpentPlayer2 || 0;
+          else if (playerIndex === 2) playerResourcesSpent = gameData.resourcesSpentPlayer3 || 0;
+          else if (playerIndex === 3) playerResourcesSpent = gameData.resourcesSpentPlayer4 || 0;
+        }
+      }
+      const playerAvailableResources = Math.max(0, simulatedTotal - playerResourcesSpent);
+      setAvailableResources(playerAvailableResources);
+    };
+
+    // Update immediately
+    updateSimulatedResources();
+
+    // Update every minute (60000ms)
+    const timer = setInterval(updateSimulatedResources, 60000);
+
+    return () => clearInterval(timer);
+  }, [game, wallet.publicKey]);
+
   useEffect(() => {
     const timer = setInterval(() => {
       setCountdownSeconds(prev => {
         if (prev <= 1) {
-          setAvailableResources(prev => prev + RESOURCES_PER_REFRESH);
           return RESOURCE_REFRESH_RATE;
         }
         return prev - 1;
@@ -94,10 +141,47 @@ const Game: React.FC = () => {
     }));
   };
 
-  const handleAddResources = () => {
-    if (HexTile.selectedTile && availableResources > 0) {
-      HexTile.selectedTile.addResources(1);
-      setAvailableResources(prev => prev - 1);
+  const handleAddResources = async (amount: number) => {
+    if (!HexTile.selectedTile || availableResources === 0 || !client || !wallet.publicKey || !game || amount <= 0 || amount > availableResources) {
+      return;
+    }
+
+    try {
+      // Calculate tile index from tileIndexX and tileIndexY
+      // tile index = row * columns + column
+      const selectedTile = HexTile.selectedTile as any;
+      const tileIndexX = selectedTile.tileIndexX;
+      const tileIndexY = selectedTile.tileIndexY;
+      const columns = game.columns || 13;
+      const selectedTileIndex = tileIndexY * columns + tileIndexX;
+      const resourcesToAdd = amount;
+
+      // Find player PDA
+      const [playerPda] = await PublicKey.findProgramAddress(
+        [Buffer.from('player'), wallet.publicKey.toBuffer()],
+        client.getProgram().programId
+      );
+
+      // Send add_resources transaction
+      const tx = await client.getProgram().methods
+        .addResources(selectedTileIndex, new BN(resourcesToAdd))
+        .accounts({
+          wallet: wallet.publicKey,
+          player: playerPda,
+          game: game.publicKey,
+        })
+        .rpc();
+
+      console.log('Add resources transaction:', tx);
+      
+      // Refresh game data to get updated resources
+      setTimeout(() => {
+        fetchGame();
+      }, 2000);
+    } catch (err) {
+      console.error('Error adding resources:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to add resources';
+      setError(errorMessage);
     }
   };
 
@@ -129,24 +213,36 @@ const Game: React.FC = () => {
       const player3 = new PublicKey(data.slice(96, 128));
       const player4 = new PublicKey(data.slice(128, 160));
       
-      // Read game_id (8 bytes) - NEW FIELD
+      // Read game_id (8 bytes)
       const gameIdValue: bigint = data.readBigUInt64LE(160);
       
-      // Read resources_per_minute (4 bytes)
-      const resourcesPerMinute = data.readUInt32LE(168);
+      // Read available_resources_timestamp (i64, 8 bytes)
+      const availableResourcesTimestamp = Number(data.readBigInt64LE(168));
       
-      // Read tile_data (144 * 4 bytes)
+      // Read resources_per_minute (u32, 4 bytes)
+      const resourcesPerMinute = data.readUInt32LE(176);
+      
+      // Read total_resources_available (u32, 4 bytes)
+      const totalResourcesAvailable = data.readUInt32LE(180);
+      
+      // Read resources_spent_player1-4 (u32 each, 4 bytes each)
+      const resourcesSpentPlayer1 = data.readUInt32LE(184);
+      const resourcesSpentPlayer2 = data.readUInt32LE(188);
+      const resourcesSpentPlayer3 = data.readUInt32LE(192);
+      const resourcesSpentPlayer4 = data.readUInt32LE(196);
+      
+      // Read tile_data (144 * 4 bytes) - starts at offset 200
       // Each TileData is: color (u8) + _pad (u8) + resource_count (u16) = 4 bytes
       const tileData: Array<{ color: number; resourceCount: number }> = [];
       for (let i = 0; i < 144; i++) {
-          const offset = 172 + (i * 4);
+          const offset = 200 + (i * 4);
           const color = data.readUInt8(offset);
           const resourceCount = data.readUInt16LE(offset + 2);
           tileData.push({ color, resourceCount });
       }
       
       // Read game state and other fields (5 bytes)
-      const gameStateOffset = 172 + (144 * 4);
+      const gameStateOffset = 200 + (144 * 4);
       const gameState = data.readUInt8(gameStateOffset);
       const rows = data.readUInt8(gameStateOffset + 1);
       const columns = data.readUInt8(gameStateOffset + 2);
@@ -194,6 +290,44 @@ const Game: React.FC = () => {
       
       // Store game players for UI
       (gameData as any).gamePlayers = gamePlayers;
+
+      // Store resource data
+      (gameData as any).totalResourcesAvailable = totalResourcesAvailable;
+      (gameData as any).resourcesSpentPlayer1 = resourcesSpentPlayer1;
+      (gameData as any).resourcesSpentPlayer2 = resourcesSpentPlayer2;
+      (gameData as any).resourcesSpentPlayer3 = resourcesSpentPlayer3;
+      (gameData as any).resourcesSpentPlayer4 = resourcesSpentPlayer4;
+      (gameData as any).availableResourcesTimestamp = availableResourcesTimestamp;
+
+      // Calculate simulated total resources based on timestamp
+      const calculateSimulatedTotal = () => {
+        const currentTime = Math.floor(Date.now() / 1000); // Current time in seconds
+        const timeDiff = currentTime - availableResourcesTimestamp;
+        if (timeDiff > 60) {
+          const minutesElapsed = Math.floor(timeDiff / 60);
+          return totalResourcesAvailable + (minutesElapsed * resourcesPerMinute);
+        }
+        return totalResourcesAvailable;
+      };
+
+      const simulatedTotal = calculateSimulatedTotal();
+      setSimulatedTotalResources(simulatedTotal);
+
+      // Calculate available resources for current player
+      let playerResourcesSpent = 0;
+      if (wallet.publicKey) {
+        if (player1.equals(wallet.publicKey)) {
+          playerResourcesSpent = resourcesSpentPlayer1;
+        } else if (player2.equals(wallet.publicKey)) {
+          playerResourcesSpent = resourcesSpentPlayer2;
+        } else if (player3.equals(wallet.publicKey)) {
+          playerResourcesSpent = resourcesSpentPlayer3;
+        } else if (player4.equals(wallet.publicKey)) {
+          playerResourcesSpent = resourcesSpentPlayer4;
+        }
+      }
+      const playerAvailableResources = Math.max(0, simulatedTotal - playerResourcesSpent);
+      setAvailableResources(playerAvailableResources);
 
       // Store game ID value
       setGameIdValue(gameIdValue);
@@ -800,6 +934,7 @@ const Game: React.FC = () => {
           handleButtonClick={handleButtonClick}
           handleAddResources={handleAddResources}
           availableResources={availableResources}
+          simulatedTotalResources={simulatedTotalResources}
           countdownSeconds={countdownSeconds}
           gamePlayers={game ? (game as any).gamePlayers : []}
           currentWallet={wallet.publicKey?.toString() || null}
@@ -809,6 +944,7 @@ const Game: React.FC = () => {
           gamePda={game?.publicKey}
           connection={connection}
           programId={PROGRAM_ID}
+          game={game}
         />
       </div>
 

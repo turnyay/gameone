@@ -35,10 +35,10 @@ const Game: React.FC = () => {
     }));
   };
 
-  const handleAddResources = () => {
-    if (HexTile.selectedTile && availableResources > 0) {
-      HexTile.selectedTile.addResources(1);
-      setAvailableResources(prev => prev - 1);
+  const handleAddResources = (amount: number) => {
+    if (HexTile.selectedTile && availableResources > 0 && amount > 0 && amount <= availableResources) {
+      HexTile.selectedTile.addResources(amount);
+      setAvailableResources(prev => prev - amount);
     }
   };
 
@@ -86,6 +86,7 @@ const Game: React.FC = () => {
         handleButtonClick={handleButtonClick}
         handleAddResources={handleAddResources}
         availableResources={availableResources}
+        simulatedTotalResources={availableResources}
         countdownSeconds={countdownSeconds}
       />
     </div>

@@ -224,6 +224,36 @@ export const IDL: Idl = {
         }
       ],
       "args": []
+    },
+    {
+      "name": "addResources",
+      "accounts": [
+        {
+          "name": "wallet",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "player",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "game",
+          "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "tileIndex",
+          "type": "u16"
+        },
+        {
+          "name": "resourcesToAdd",
+          "type": "u32"
+        }
+      ]
     }
   ],
   "accounts": [

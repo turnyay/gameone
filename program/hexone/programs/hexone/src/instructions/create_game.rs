@@ -2,6 +2,7 @@ use anchor_lang::prelude::*;
 use crate::state::game::Game;
 use crate::state::platform::Platform;
 use crate::error::HexoneError;
+use crate::constants::RESOURCES_PER_MINUTE;
 
 #[derive(Accounts)]
 pub struct CreateGame<'info> {
@@ -41,6 +42,9 @@ pub fn create_game(ctx: Context<CreateGame>) -> Result<()> {
     game.rows = 11;
     game.columns = 13;
 
+    // Set resources per minute
+    game.resources_per_minute = RESOURCES_PER_MINUTE;
+
     // Store local variables for calculations
     let rows = game.rows as usize;
     let columns = game.columns as usize;
@@ -72,6 +76,15 @@ pub fn create_game(ctx: Context<CreateGame>) -> Result<()> {
     game.game_state = 0;
     game.version = 1;
     game.bump = ctx.bumps.game;
+
+    // Initialize resource tracking fields
+    let clock = Clock::get()?;
+    game.available_resources_timestamp = clock.unix_timestamp;
+    game.total_resources_available = 0;
+    game.resources_spent_player1 = 0;
+    game.resources_spent_player2 = 0;
+    game.resources_spent_player3 = 0;
+    game.resources_spent_player4 = 0;
 
     // Increment platform game count
     platform.game_count += 1;

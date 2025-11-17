@@ -4,7 +4,8 @@ import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
 import { BN } from '@coral-xyz/anchor';
-import { HexoneClient, GameAccount } from '../lib/hexone';
+import { HexoneClient, GameAccount, PROGRAM_ID } from '../lib/hexone';
+import { Buffer } from 'buffer';
 
 export function longToByteArray(long: number): number[] {
     const byteArray = [0, 0, 0, 0, 0, 0, 0, 0];
@@ -30,6 +31,7 @@ const Games: React.FC = () => {
   const [playerAccount, setPlayerAccount] = useState<any | null>(null);
   const [checkingPlayer, setCheckingPlayer] = useState(false);
   const [creatingGame, setCreatingGame] = useState(false);
+  const [treasuryBalances, setTreasuryBalances] = useState<Map<string, number>>(new Map());
 
   // Set up HexoneClient - same pattern as SiclubClient
   const client = useMemo(() => {
@@ -262,6 +264,9 @@ const Games: React.FC = () => {
             columns,
             resourcesPerMinute
           };
+          
+          // Store game ID for display
+          (game as any).gameId = Number(gameId);
 
           allGames.push(game);
           console.log(`Successfully fetched game ${i}`);
@@ -274,6 +279,9 @@ const Games: React.FC = () => {
       console.log(`Fetched ${allGames.length} games out of ${count} total`);
       setGames(allGames);
       setError(null);
+      
+      // Fetch treasury balances for all games
+      await fetchTreasuryBalances(allGames);
     } catch (err) {
       console.error('Error in fetchPlatformInfo:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch platform info';
@@ -282,6 +290,31 @@ const Games: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchTreasuryBalances = async (gamesList: GameAccount[]) => {
+    if (!connection) return;
+    
+    const balances = new Map<string, number>();
+    
+    for (const game of gamesList) {
+      try {
+        // Derive treasury PDA
+        const [treasuryPda] = await PublicKey.findProgramAddress(
+          [Buffer.from('game_treasury'), game.publicKey.toBuffer()],
+          PROGRAM_ID
+        );
+        
+        // Fetch balance
+        const balance = await connection.getBalance(treasuryPda);
+        balances.set(game.publicKey.toString(), balance / 1e9); // Convert lamports to SOL
+      } catch (err) {
+        console.error(`Error fetching treasury balance for game ${game.publicKey.toString()}:`, err);
+        balances.set(game.publicKey.toString(), 0);
+      }
+    }
+    
+    setTreasuryBalances(balances);
   };
 
   const handleGameClick = (gameId: string) => {
@@ -768,7 +801,7 @@ const Games: React.FC = () => {
                         marginBottom: '8px',
                         color: '#f97316'
                       }}>
-                        Game #{game.publicKey.toString().slice(0, 8)}...
+                        Game # {String((game as any).gameId ?? 0).padStart(6, '0')}
                       </h3>
                       <div style={{ 
                         fontSize: '12px', 
@@ -806,8 +839,12 @@ const Games: React.FC = () => {
                         </span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ color: '#888' }}>Cost:</span>
-                        <span style={{ color: '#ffa500' }}>{game.cost} SOL</span>
+                        <span style={{ color: '#888' }}>Game Prize:</span>
+                        <span style={{ color: '#ffa500' }}>
+                          {treasuryBalances.has(game.publicKey.toString()) 
+                            ? `${treasuryBalances.get(game.publicKey.toString())!.toFixed(5)} SOL`
+                            : 'Loading...'}
+                        </span>
                       </div>
                     </div>
                   </div>

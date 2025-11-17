@@ -51,6 +51,14 @@ pub mod hexone {
     pub fn resolve_attack(ctx: Context<ResolveAttack>) -> Result<()> {
         instructions::resolve_attack(ctx)
     }
+
+    pub fn add_resources(
+        ctx: Context<AddResources>,
+        tile_index: u16,
+        resources_to_add: u32,
+    ) -> Result<()> {
+        instructions::add_resources(ctx, tile_index, resources_to_add)
+    }
 }
 
 

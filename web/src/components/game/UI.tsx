@@ -11,8 +11,9 @@ interface UIProps {
     addResources: boolean;
   };
   handleButtonClick: (buttonName: 'addResources') => void;
-  handleAddResources: () => void;
+  handleAddResources: (amount: number) => void;
   availableResources: number;
+  simulatedTotalResources: number;
   countdownSeconds: number;
   gamePlayers?: Array<{ publicKey: string; colorIndex: number } | null>;
   currentWallet?: string | null;
@@ -22,6 +23,7 @@ interface UIProps {
   gamePda?: PublicKey;
   connection?: Connection;
   programId?: PublicKey;
+  game?: any;
 }
 
 const getColorFromIndex = (index: number) => {
@@ -43,6 +45,7 @@ export const UI: React.FC<UIProps> = ({
   handleButtonClick,
   handleAddResources,
   availableResources,
+  simulatedTotalResources,
   countdownSeconds,
   gamePlayers = [],
   currentWallet = null,
@@ -51,8 +54,15 @@ export const UI: React.FC<UIProps> = ({
   gameIdValue,
   gamePda,
   connection,
-  programId
+  programId,
+  game
 }) => {
+  const [resourcesToAdd, setResourcesToAdd] = useState(availableResources);
+
+  // Update resourcesToAdd when availableResources changes
+  useEffect(() => {
+    setResourcesToAdd(availableResources);
+  }, [availableResources]);
   const [treasuryBalance, setTreasuryBalance] = useState<number | null>(null);
   const [treasuryPubkey, setTreasuryPubkey] = useState<string | null>(null);
 
@@ -132,41 +142,78 @@ export const UI: React.FC<UIProps> = ({
             />
             <span>Move all resources</span>
           </div>
-          <button 
-            onClick={() => {
-              handleButtonClick('addResources');
-              handleAddResources();
-            }}
-            disabled={!HexTile.selectedTile || availableResources === 0}
-            style={{
-              padding: '10px',
-              backgroundColor: !HexTile.selectedTile || availableResources === 0 ? '#666' : 
-                buttonStates.addResources ? '#008000' : '#006400',
-              border: '1px solid #444',
-              color: '#fff',
-              borderRadius: '4px',
-              cursor: !HexTile.selectedTile || availableResources === 0 ? 'not-allowed' : 'pointer',
-              transition: 'background-color 0.15s ease',
-              transform: buttonStates.addResources ? 'scale(0.98)' : 'scale(1)',
-              opacity: !HexTile.selectedTile || availableResources === 0 ? 0.5 : 1
-            }}
-            onMouseEnter={(e) => {
-              if (!buttonStates.addResources && HexTile.selectedTile && availableResources > 0) {
-                e.currentTarget.style.backgroundColor = '#008000';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!buttonStates.addResources && HexTile.selectedTile && availableResources > 0) {
-                e.currentTarget.style.backgroundColor = '#006400';
-              }
-            }}
-          >
-            Add Resources
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <input
+              type="number"
+              min="1"
+              max={availableResources}
+              value={resourcesToAdd}
+              onChange={(e) => {
+                const value = parseInt(e.target.value, 10);
+                if (!isNaN(value) && value >= 1 && value <= availableResources) {
+                  setResourcesToAdd(value);
+                } else if (e.target.value === '') {
+                  setResourcesToAdd(0);
+                }
+              }}
+              onBlur={(e) => {
+                if (e.target.value === '' || parseInt(e.target.value, 10) < 1) {
+                  setResourcesToAdd(Math.min(1, availableResources));
+                } else if (parseInt(e.target.value, 10) > availableResources) {
+                  setResourcesToAdd(availableResources);
+                }
+              }}
+              disabled={!HexTile.selectedTile || availableResources === 0}
+              style={{
+                width: '60px',
+                padding: '8px',
+                backgroundColor: '#2a2a2a',
+                border: '1px solid #444',
+                color: '#fff',
+                borderRadius: '4px',
+                fontSize: '14px',
+                textAlign: 'center',
+                opacity: !HexTile.selectedTile || availableResources === 0 ? 0.5 : 1
+              }}
+            />
+            <button 
+              onClick={() => {
+                if (resourcesToAdd > 0 && resourcesToAdd <= availableResources) {
+                  handleButtonClick('addResources');
+                  handleAddResources(resourcesToAdd);
+                }
+              }}
+              disabled={!HexTile.selectedTile || availableResources === 0 || resourcesToAdd <= 0 || resourcesToAdd > availableResources}
+              style={{
+                padding: '10px',
+                backgroundColor: !HexTile.selectedTile || availableResources === 0 || resourcesToAdd <= 0 || resourcesToAdd > availableResources ? '#666' : 
+                  buttonStates.addResources ? '#008000' : '#006400',
+                border: '1px solid #444',
+                color: '#fff',
+                borderRadius: '4px',
+                cursor: !HexTile.selectedTile || availableResources === 0 || resourcesToAdd <= 0 || resourcesToAdd > availableResources ? 'not-allowed' : 'pointer',
+                transition: 'background-color 0.15s ease',
+                transform: buttonStates.addResources ? 'scale(0.98)' : 'scale(1)',
+                opacity: !HexTile.selectedTile || availableResources === 0 || resourcesToAdd <= 0 || resourcesToAdd > availableResources ? 0.5 : 1
+              }}
+              onMouseEnter={(e) => {
+                if (!buttonStates.addResources && HexTile.selectedTile && availableResources > 0 && resourcesToAdd > 0 && resourcesToAdd <= availableResources) {
+                  e.currentTarget.style.backgroundColor = '#008000';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!buttonStates.addResources && HexTile.selectedTile && availableResources > 0 && resourcesToAdd > 0 && resourcesToAdd <= availableResources) {
+                  e.currentTarget.style.backgroundColor = '#006400';
+                }
+              }}
+            >
+              Add Resources
+            </button>
+          </div>
         </div>
 
         <div style={{ margin: '30px 0' }}>
-          <h2 style={{ marginBottom: '20px' }}>Resources Available</h2>
+          <h2 style={{ marginBottom: '20px' }}>Resources</h2>
           <div style={{ 
             display: 'flex', 
             flexDirection: 'column', 
@@ -175,14 +222,16 @@ export const UI: React.FC<UIProps> = ({
             fontFamily: 'monospace',
             fontSize: '14px'
           }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ color: '#888' }}>Resources:</span>
-              <span style={{ color: '#ffa500' }}>{availableResources}</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#888' }}>Total Resources:</span>
+              <span style={{ color: '#ffa500' }}>{simulatedTotalResources}</span>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ color: '#888' }}>More resources in:</span>
-              <span style={{ color: '#ffa500' }}>{countdownSeconds} seconds</span>
-            </div>
+            {currentWallet && gamePlayers.some(player => player && player.publicKey === currentWallet) && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#888' }}>My Available:</span>
+                <span style={{ color: '#ffa500' }}>{availableResources}</span>
+              </div>
+            )}
           </div>
         </div>
 
