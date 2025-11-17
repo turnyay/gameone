@@ -9,7 +9,7 @@ pub use state::*;
 pub use constants::*;
 pub use instructions::*;
 
-declare_id!("G99PsLJdkyfY9MgafG1SRBkucX9nqogYsyquPhgL9VkD");
+declare_id!("D3sXMGZYUNN3DeQr2tUSKjgN8qYXcRHPCSSaJMAPUFzP");
 
 #[program]
 pub mod hexone {
@@ -27,8 +27,8 @@ pub mod hexone {
         instructions::create_player(ctx, name)
     }
 
-    pub fn join_game(ctx: Context<JoinGame>) -> Result<()> {
-        instructions::join_game(ctx)
+    pub fn join_game(ctx: Context<JoinGame>, game_id: u64) -> Result<()> {
+        instructions::join_game(ctx, game_id)
     }
 
     pub fn move_resources(

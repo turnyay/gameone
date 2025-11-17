@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 use crate::state::game::{Game, GAME_STATE_WAITING, GAME_STATE_IN_PROGRESS};
 use crate::state::player::{Player, PLAYER_STATUS_PLAYING, PLAYER_STATUS_READY};
+use crate::state::platform::Platform;
 use crate::error::HexoneError;
 
 #[derive(Accounts)]
@@ -17,13 +18,39 @@ pub struct JoinGame<'info> {
     )]
     pub player: Account<'info, Player>,
 
+    #[account(
+        seeds = [b"platform"],
+        bump = platform.bump,
+    )]
+    pub platform: Account<'info, Platform>,
+
     #[account(mut)]
     pub game: AccountLoader<'info, Game>,
+
+    #[account(
+        mut,
+        seeds = [b"game_treasury", game.key().as_ref()],
+        bump
+    )]
+    pub game_treasury: SystemAccount<'info>,
+
+    pub system_program: Program<'info, System>,
 }
 
-pub fn join_game(ctx: Context<JoinGame>) -> Result<()> {
+pub fn join_game(ctx: Context<JoinGame>, game_id: u64) -> Result<()> {
+    // Derive and validate game PDA
+    let (expected_game, _bump) = Pubkey::find_program_address(
+        &[b"GAME-", game_id.to_le_bytes().as_ref()],
+        ctx.program_id,
+    );
+    require!(
+        expected_game == ctx.accounts.game.key(),
+        HexoneError::Invalid
+    );
+
     let game = &mut ctx.accounts.game.load_mut()?;
     let player = &mut ctx.accounts.player;
+    let platform = &ctx.accounts.platform;
 
     // Check game state
     require!(game.game_state == GAME_STATE_WAITING, HexoneError::GameNotWaiting);
@@ -35,6 +62,21 @@ pub fn join_game(ctx: Context<JoinGame>) -> Result<()> {
        game.player4 != Pubkey::default() {
         return Err(HexoneError::GameFull.into());
     }
+
+    // Transfer game cost from player to game treasury
+    let game_cost = platform.game_cost;
+    anchor_lang::solana_program::program::invoke(
+        &anchor_lang::solana_program::system_instruction::transfer(
+            ctx.accounts.wallet.key,
+            ctx.accounts.game_treasury.key,
+            game_cost,
+        ),
+        &[
+            ctx.accounts.wallet.to_account_info(),
+            ctx.accounts.game_treasury.to_account_info(),
+            ctx.accounts.system_program.to_account_info(),
+        ],
+    )?;
 
     // Add player to first available slot
     if game.player1 == Pubkey::default() {

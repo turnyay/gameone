@@ -1,5 +1,5 @@
 {
-  "address": "G99PsLJdkyfY9MgafG1SRBkucX9nqogYsyquPhgL9VkD",
+  "address": "D3sXMGZYUNN3DeQr2tUSKjgN8qYXcRHPCSSaJMAPUFzP",
   "metadata": {
     "name": "hexone",
     "version": "0.1.0",
@@ -7,6 +7,96 @@
     "description": "Created with Anchor"
   },
   "instructions": [
+    {
+      "name": "attack_tile",
+      "discriminator": [
+        238,
+        238,
+        92,
+        61,
+        9,
+        229,
+        57,
+        198
+      ],
+      "accounts": [
+        {
+          "name": "wallet",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "player",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  121,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "wallet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "game",
+          "writable": true
+        },
+        {
+          "name": "defender",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  102,
+                  101,
+                  110,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "game"
+              },
+              {
+                "kind": "arg",
+                "path": "defender_tile_index"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "attacker_tile_index",
+          "type": "u16"
+        },
+        {
+          "name": "defender_tile_index",
+          "type": "u16"
+        }
+      ]
+    },
     {
       "name": "create_game",
       "discriminator": [
@@ -63,7 +153,8 @@
               },
               {
                 "kind": "account",
-                "path": "platform.game_count"
+                "path": "platform.game_count",
+                "account": "Platform"
               }
             ]
           }
@@ -242,11 +333,70 @@
           }
         },
         {
+          "name": "platform",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  116,
+                  102,
+                  111,
+                  114,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "game",
           "writable": true
+        },
+        {
+          "name": "game_treasury",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101,
+                  95,
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "game"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "game_id",
+          "type": "u64"
+        }
+      ]
     },
     {
       "name": "move_resources",
@@ -308,9 +458,76 @@
           "type": "u16"
         }
       ]
+    },
+    {
+      "name": "resolve_attack",
+      "discriminator": [
+        77,
+        153,
+        65,
+        199,
+        69,
+        106,
+        169,
+        209
+      ],
+      "accounts": [
+        {
+          "name": "game",
+          "writable": true
+        },
+        {
+          "name": "defender",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  102,
+                  101,
+                  110,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "game"
+              },
+              {
+                "kind": "account",
+                "path": "defender.defender_tile_index",
+                "account": "Defender"
+              }
+            ]
+          }
+        },
+        {
+          "name": "destination",
+          "writable": true
+        }
+      ],
+      "args": []
     }
   ],
   "accounts": [
+    {
+      "name": "Defender",
+      "discriminator": [
+        170,
+        93,
+        66,
+        73,
+        46,
+        214,
+        64,
+        219
+      ]
+    },
     {
       "name": "Game",
       "discriminator": [
@@ -381,9 +598,66 @@
       "code": 6005,
       "name": "GameFull",
       "msg": "Game is full"
+    },
+    {
+      "code": 6006,
+      "name": "InvalidTreasury",
+      "msg": "Invalid treasury account"
     }
   ],
   "types": [
+    {
+      "name": "Defender",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "game",
+            "type": "pubkey"
+          },
+          {
+            "name": "defender_tile_index",
+            "type": "u16"
+          },
+          {
+            "name": "defender_tile_color",
+            "type": "u8"
+          },
+          {
+            "name": "attacker_tile_index",
+            "type": "u16"
+          },
+          {
+            "name": "attacker_tile_color",
+            "type": "u8"
+          },
+          {
+            "name": "attack_started_at",
+            "type": "i64"
+          },
+          {
+            "name": "is_attack_resolved",
+            "type": "bool"
+          },
+          {
+            "name": "attacker_won",
+            "type": "bool"
+          },
+          {
+            "name": "attacking_result",
+            "type": "u16"
+          },
+          {
+            "name": "defending_result",
+            "type": "u16"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
     {
       "name": "Game",
       "serialization": "bytemuck",
@@ -412,6 +686,10 @@
           {
             "name": "player4",
             "type": "pubkey"
+          },
+          {
+            "name": "game_id",
+            "type": "u64"
           },
           {
             "name": "resources_per_minute",
@@ -455,7 +733,7 @@
             "type": {
               "array": [
                 "u8",
-                3
+                7
               ]
             }
           }

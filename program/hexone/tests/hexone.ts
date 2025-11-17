@@ -5,7 +5,7 @@ import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
 import { expect } from "chai";
 
 // Program ID from Anchor.toml
-const PROGRAM_ID = new PublicKey("G99PsLJdkyfY9MgafG1SRBkucX9nqogYsyquPhgL9VkD");
+const PROGRAM_ID = new PublicKey("D3sXMGZYUNN3DeQr2tUSKjgN8qYXcRHPCSSaJMAPUFzP");
 
 describe("hexone", () => {
   // Configure the client to use the local cluster.
@@ -143,6 +143,7 @@ describe("hexone", () => {
 
       // Verify game account
       expect(gameAccount.admin.toBase58()).to.equal(admin.publicKey.toBase58());
+      expect(gameAccount.gameId.toNumber()).to.equal(0); // First game has game_id = 0
       expect(gameAccount.rows).to.equal(11);
       expect(gameAccount.columns).to.equal(13);
       expect(gameAccount.gameState).to.equal(0);
@@ -240,17 +241,26 @@ describe("hexone", () => {
 
   it("Join Game", async () => {
     try {
+      // Derive game treasury PDA
+      const [gameTreasuryPDA] = PublicKey.findProgramAddressSync(
+        [Buffer.from("game_treasury"), gamePDA.toBuffer()],
+        PROGRAM_ID
+      );
+
       // Helper function to join game
       const joinGame = async (
         wallet: Keypair,
         playerPDA: PublicKey
       ): Promise<string> => {
         const tx = await program.methods
-          .joinGame()
+          .joinGame(new anchor.BN(0)) // game_id = 0 for first game
           .accounts({
             wallet: wallet.publicKey,
             player: playerPDA,
+            platform: platformPDA,
             game: gamePDA,
+            gameTreasury: gameTreasuryPDA,
+            systemProgram: SystemProgram.programId,
           })
           .signers([wallet])
           .rpc();

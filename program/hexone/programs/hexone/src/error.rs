@@ -25,4 +25,8 @@ pub enum HexoneError {
     /// 6005 - Game is full
     #[msg("Game is full")]
     GameFull,
+
+    /// 6006 - Invalid treasury account
+    #[msg("Invalid treasury account")]
+    InvalidTreasury,
 }

@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { PublicKey, Connection } from '@solana/web3.js';
 import { HexTile } from './HexTile';
 import { PLAYER_COLORS } from './constants';
 
@@ -17,6 +18,10 @@ interface UIProps {
   currentWallet?: string | null;
   onJoinGame?: () => void;
   joiningGame?: boolean;
+  gameIdValue?: bigint;
+  gamePda?: PublicKey;
+  connection?: Connection;
+  programId?: PublicKey;
 }
 
 const getColorFromIndex = (index: number) => {
@@ -42,8 +47,57 @@ export const UI: React.FC<UIProps> = ({
   gamePlayers = [],
   currentWallet = null,
   onJoinGame,
-  joiningGame = false
+  joiningGame = false,
+  gameIdValue,
+  gamePda,
+  connection,
+  programId
 }) => {
+  const [treasuryBalance, setTreasuryBalance] = useState<number | null>(null);
+  const [treasuryPubkey, setTreasuryPubkey] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchTreasuryBalance = async () => {
+      if (!gamePda || !connection || !programId) return;
+
+      try {
+        // Derive treasury PDA
+        const [treasuryPda] = await PublicKey.findProgramAddress(
+          [Buffer.from('game_treasury'), gamePda.toBuffer()],
+          programId
+        );
+
+        setTreasuryPubkey(treasuryPda.toString());
+
+        // Fetch balance
+        const balance = await connection.getBalance(treasuryPda);
+        setTreasuryBalance(balance / 1e9); // Convert lamports to SOL
+      } catch (err) {
+        console.error('Error fetching treasury balance:', err);
+        setTreasuryBalance(null);
+        setTreasuryPubkey(null);
+      }
+    };
+
+    fetchTreasuryBalance();
+    // Refresh balance every 5 seconds
+    const interval = setInterval(fetchTreasuryBalance, 5000);
+    return () => clearInterval(interval);
+  }, [gamePda, connection, programId]);
+
+  // Format game ID as padded 6-digit number
+  const formatGameId = () => {
+    if (gameIdValue === undefined) return 'N/A';
+    const gameIdNum = Number(gameIdValue);
+    return `Game # ${String(gameIdNum).padStart(6, '0')}`;
+  };
+
+  // Format game ID display with pubkey
+  const formatGameIdDisplay = () => {
+    if (!gamePda) return 'N/A';
+    const gameIdStr = formatGameId();
+    return `${gameIdStr} (ID: ${gameIdValue !== undefined ? Number(gameIdValue) : 'N/A'}, ${shortenPubkey(gamePda.toString())})`;
+  };
   return (
     <>
       <div style={{ 
@@ -144,11 +198,18 @@ export const UI: React.FC<UIProps> = ({
           }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <span style={{ color: '#888' }}>Game ID:</span>
-              <span style={{ color: '#ffa500' }}>9C6Mu...Wn1pG</span>
+              <span style={{ color: '#ffa500' }}>{formatGameIdDisplay()}</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <span style={{ color: '#888' }}>Game Prize Total:</span>
-              <span style={{ color: '#ffa500' }}>4.25345 SOL</span>
+              <span style={{ color: '#ffa500' }}>
+                {treasuryBalance !== null ? `${treasuryBalance.toFixed(5)} SOL` : 'Loading...'}
+                {treasuryPubkey && (
+                  <span style={{ color: '#888', fontSize: '12px' }}>
+                    {' '}({shortenPubkey(treasuryPubkey)})
+                  </span>
+                )}
+              </span>
             </div>
           </div>
         </div>

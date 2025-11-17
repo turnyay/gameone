@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
+import { BN } from '@coral-xyz/anchor';
 import { HexoneClient, GameAccount } from '../lib/hexone';
 
 export function longToByteArray(long: number): number[] {
@@ -208,21 +209,24 @@ const Games: React.FC = () => {
           const player3 = new PublicKey(data.slice(96, 128));
           const player4 = new PublicKey(data.slice(128, 160));
           
+          // Read game_id (8 bytes) - NEW FIELD
+          const gameId = data.readBigUInt64LE(160);
+          
           // Read resources_per_minute (4 bytes)
-          const resourcesPerMinute = data.readUInt32LE(160);
+          const resourcesPerMinute = data.readUInt32LE(168);
           
           // Read tile_data (144 * 4 bytes)
           // Each TileData is: color (u8) + _pad (u8) + resource_count (u16) = 4 bytes
           const parsedTileData: Array<{ color: number; resourceCount: number }> = [];
           for (let j = 0; j < 144; j++) {
-            const offset = 164 + (j * 4);
+            const offset = 172 + (j * 4);
             const color = data.readUInt8(offset);
             const resourceCount = data.readUInt16LE(offset + 2);
             parsedTileData.push({ color, resourceCount });
           }
           
           // Read game state and other fields (5 bytes)
-          const gameStateOffset = 164 + (144 * 4);
+          const gameStateOffset = 172 + (144 * 4);
           const gameState = data.readUInt8(gameStateOffset);
           const rows = data.readUInt8(gameStateOffset + 1);
           const columns = data.readUInt8(gameStateOffset + 2);
@@ -434,6 +438,12 @@ const Games: React.FC = () => {
         client.getProgram().programId
       );
 
+      // Derive game treasury PDA
+      const [gameTreasuryPda] = await PublicKey.findProgramAddress(
+        [Buffer.from('game_treasury'), gamePda.toBuffer()],
+        client.getProgram().programId
+      );
+
       // Build both instructions in a single transaction using client
       const createGameIx = await client.getProgram().methods
         .createGame()
@@ -445,12 +455,18 @@ const Games: React.FC = () => {
         })
         .instruction();
 
+      // Convert game count to BN for joinGame
+      const gameIdBN = new BN(gameCount);
+
       const joinGameIx = await client.getProgram().methods
-        .joinGame()
+        .joinGame(gameIdBN)
         .accounts({
           wallet: wallet.publicKey,
           player: playerPda,
+          platform: platformPda,
           game: gamePda,
+          gameTreasury: gameTreasuryPda,
+          systemProgram: SystemProgram.programId,
         })
         .instruction();
 

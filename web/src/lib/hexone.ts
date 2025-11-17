@@ -3,7 +3,7 @@ import { Program, AnchorProvider, Idl, Wallet as AnchorWallet, BN } from '@coral
 import { WalletContextState } from '@solana/wallet-adapter-react';
 import { Hexone } from '../../../program/hexone/target/types/hexone';
 
-const PROGRAM_ID = new PublicKey('G99PsLJdkyfY9MgafG1SRBkucX9nqogYsyquPhgL9VkD');
+export const PROGRAM_ID = new PublicKey('D3sXMGZYUNN3DeQr2tUSKjgN8qYXcRHPCSSaJMAPUFzP');
 
 export const IDL: Idl = {
   "version": "0.1.0",
@@ -103,12 +103,32 @@ export const IDL: Idl = {
           "isSigner": false
         },
         {
+          "name": "platform",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
           "name": "game",
           "isMut": true,
           "isSigner": false
+        },
+        {
+          "name": "gameTreasury",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "gameId",
+          "type": "u64"
+        }
+      ]
     },
     {
       "name": "moveResources",
@@ -233,6 +253,10 @@ export const IDL: Idl = {
             "type": "publicKey"
           },
           {
+            "name": "gameId",
+            "type": "u64"
+          },
+          {
             "name": "resourcesPerMinute",
             "type": "u32"
           },
@@ -270,7 +294,7 @@ export const IDL: Idl = {
           {
             "name": "_padding",
             "type": {
-              "array": ["u8", 3]
+              "array": ["u8", 7]
             }
           }
         ]

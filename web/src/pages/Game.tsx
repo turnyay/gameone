@@ -2,8 +2,10 @@ import React, { useEffect, useCallback, useState, useRef, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
-import { PublicKey } from '@solana/web3.js';
-import { HexoneClient, GameAccount } from '../lib/hexone';
+import { PublicKey, SystemProgram } from '@solana/web3.js';
+import { BN } from '@coral-xyz/anchor';
+import { Buffer } from 'buffer';
+import { HexoneClient, GameAccount, PROGRAM_ID } from '../lib/hexone';
 import Phaser from 'phaser';
 import { MainScene } from '../components/game/MainScene';
 import { HexTile } from '../components/game/HexTile';
@@ -17,6 +19,7 @@ const Game: React.FC = () => {
   const { connection } = useConnection();
   const wallet = useWallet();
   const [game, setGame] = useState<GameAccount | null>(null);
+  const [gameIdValue, setGameIdValue] = useState<bigint | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
@@ -104,7 +107,7 @@ const Game: React.FC = () => {
       setLoading(true);
       
       // Find the PDA using the game ID
-      const gamePda = new PublicKey(gameId);
+      const gamePda: PublicKey = new PublicKey(gameId);
       console.log('Game PDA:', gamePda.toString());
 
       // Get game account data
@@ -116,7 +119,7 @@ const Game: React.FC = () => {
       console.log('Game account data length:', gameAccountInfo.data.length);
       
       // Skip 8 bytes for Anchor discriminator
-      const data = gameAccountInfo.data.slice(8);
+      const data: Buffer = Buffer.from(gameAccountInfo.data.slice(8));
       console.log('Data after discriminator length:', data.length);
       
       // Read pubkeys (32 bytes each)
@@ -126,21 +129,24 @@ const Game: React.FC = () => {
       const player3 = new PublicKey(data.slice(96, 128));
       const player4 = new PublicKey(data.slice(128, 160));
       
+      // Read game_id (8 bytes) - NEW FIELD
+      const gameIdValue: bigint = data.readBigUInt64LE(160);
+      
       // Read resources_per_minute (4 bytes)
-      const resourcesPerMinute = data.readUInt32LE(160);
+      const resourcesPerMinute = data.readUInt32LE(168);
       
       // Read tile_data (144 * 4 bytes)
       // Each TileData is: color (u8) + _pad (u8) + resource_count (u16) = 4 bytes
       const tileData: Array<{ color: number; resourceCount: number }> = [];
       for (let i = 0; i < 144; i++) {
-          const offset = 164 + (i * 4);
+          const offset = 172 + (i * 4);
           const color = data.readUInt8(offset);
           const resourceCount = data.readUInt16LE(offset + 2);
           tileData.push({ color, resourceCount });
       }
       
       // Read game state and other fields (5 bytes)
-      const gameStateOffset = 164 + (144 * 4);
+      const gameStateOffset = 172 + (144 * 4);
       const gameState = data.readUInt8(gameStateOffset);
       const rows = data.readUInt8(gameStateOffset + 1);
       const columns = data.readUInt8(gameStateOffset + 2);
@@ -189,6 +195,9 @@ const Game: React.FC = () => {
       // Store game players for UI
       (gameData as any).gamePlayers = gamePlayers;
 
+      // Store game ID value
+      setGameIdValue(gameIdValue);
+
       console.log('Parsed game:', gameData);
       setGame(gameData);
       setError(null);
@@ -227,7 +236,7 @@ const Game: React.FC = () => {
   };
 
   const handleJoinGame = async () => {
-    if (!client || !wallet.publicKey || !game) {
+    if (!client || !wallet.publicKey || !game || gameIdValue === undefined) {
       setError('Please connect your wallet first');
       return;
     }
@@ -236,20 +245,35 @@ const Game: React.FC = () => {
       setJoiningGame(true);
       setError(null);
 
-      // Use client method (similar to client.createClub in siclub)
-      // Note: We'll need to add a joinGame method to HexoneClient
-      // For now, using program directly but should be moved to client
+      // Find required PDAs
       const [playerPda] = await PublicKey.findProgramAddress(
         [Buffer.from('player'), wallet.publicKey.toBuffer()],
         client.getProgram().programId
       );
 
+      const [platformPda] = await PublicKey.findProgramAddress(
+        [Buffer.from('platform')],
+        client.getProgram().programId
+      );
+
+      const [gameTreasuryPda] = await PublicKey.findProgramAddress(
+        [Buffer.from('game_treasury'), game.publicKey.toBuffer()],
+        client.getProgram().programId
+      );
+
+      // Convert gameIdValue to BN (convert bigint to number first)
+      const gameIdNum = Number(gameIdValue);
+      const gameIdBN = new BN(gameIdNum);
+
       const tx = await client.getProgram().methods
-        .joinGame()
+        .joinGame(gameIdBN)
         .accounts({
           wallet: wallet.publicKey,
           player: playerPda,
+          platform: platformPda,
           game: game.publicKey,
+          gameTreasury: gameTreasuryPda,
+          systemProgram: SystemProgram.programId,
         })
         .rpc();
 
@@ -781,6 +805,10 @@ const Game: React.FC = () => {
           currentWallet={wallet.publicKey?.toString() || null}
           onJoinGame={handleJoinGame}
           joiningGame={joiningGame}
+          gameIdValue={gameIdValue}
+          gamePda={game?.publicKey}
+          connection={connection}
+          programId={PROGRAM_ID}
         />
       </div>
 

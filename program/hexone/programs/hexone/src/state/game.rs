@@ -16,6 +16,8 @@ pub struct Game {
     pub player2: Pubkey,
     pub player3: Pubkey,
     pub player4: Pubkey,
+    // 8-byte aligned fields
+    pub game_id: u64,
     // 4-byte aligned fields
     pub resources_per_minute: u32,
     // Array of TileData (4-byte aligned)
@@ -26,8 +28,8 @@ pub struct Game {
     pub columns: u8,
     pub version: u8,
     pub bump: u8,
-    // 3 bytes of padding to align to 4 bytes
-    pub _padding: [u8; 3]
+    // 7 bytes of padding to align to 8 bytes
+    pub _padding: [u8; 7]
 }
 
 impl Game {
@@ -37,10 +39,11 @@ impl Game {
         + 32                     // player2
         + 32                     // player3
         + 32                     // player4
+        + 8                      // game_id
         + 4                      // resources_per_minute
         + (144 * 4)              // tile_data (144 * 4)
         + 5                      // game_state + rows + columns + version + bump
-        + 3;                     // padding
+        + 7;                     // padding
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Pod, Zeroable)]

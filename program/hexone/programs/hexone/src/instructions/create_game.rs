@@ -34,6 +34,9 @@ pub fn create_game(ctx: Context<CreateGame>) -> Result<()> {
     // Set admin
     game.admin = ctx.accounts.admin.key();
 
+    // Set game_id from platform game_count (before incrementing)
+    game.game_id = platform.game_count;
+
     // Set game dimensions
     game.rows = 11;
     game.columns = 13;
