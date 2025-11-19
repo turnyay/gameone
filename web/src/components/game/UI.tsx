@@ -340,6 +340,7 @@ export const UI: React.FC<UIProps> = ({
               <span>XP</span>
             </div>
             <span style={{ minWidth: '80px', textAlign: 'right' }}>Tiles</span>
+            <span style={{ minWidth: '80px', textAlign: 'right' }}>Bonus</span>
           </div>
           <div style={{ 
             display: 'flex', 
@@ -356,6 +357,16 @@ export const UI: React.FC<UIProps> = ({
               
               // Get XP and tile count data from game
               const gameData = game as any;
+              
+              // Log game data to debug tier counts
+              console.log('Game data:', gameData);
+              console.log('Player 3 (Green) tier counts:', {
+                gold: gameData?.goldTileCountPlayer3,
+                silver: gameData?.silverTileCountPlayer3,
+                bronze: gameData?.bronzeTileCountPlayer3,
+                iron: gameData?.ironTileCountPlayer3
+              });
+              
               const savedXpValues = [
                 gameData?.xpPlayer1 || 0,
                 gameData?.xpPlayer2 || 0,
@@ -376,23 +387,90 @@ export const UI: React.FC<UIProps> = ({
               ];
               const xpPerMinutePerTile = gameData?.xpPerMinutePerTile || 1;
               
+              // Get tier counts for each player - try both camelCase and snake_case
+              const tierCounts = [
+                {
+                  gold: gameData?.goldTileCountPlayer1 ?? gameData?.gold_tile_count_player1 ?? 0,
+                  silver: gameData?.silverTileCountPlayer1 ?? gameData?.silver_tile_count_player1 ?? 0,
+                  bronze: gameData?.bronzeTileCountPlayer1 ?? gameData?.bronze_tile_count_player1 ?? 0,
+                  iron: gameData?.ironTileCountPlayer1 ?? gameData?.iron_tile_count_player1 ?? 0
+                },
+                {
+                  gold: gameData?.goldTileCountPlayer2 ?? gameData?.gold_tile_count_player2 ?? 0,
+                  silver: gameData?.silverTileCountPlayer2 ?? gameData?.silver_tile_count_player2 ?? 0,
+                  bronze: gameData?.bronzeTileCountPlayer2 ?? gameData?.bronze_tile_count_player2 ?? 0,
+                  iron: gameData?.ironTileCountPlayer2 ?? gameData?.iron_tile_count_player2 ?? 0
+                },
+                {
+                  gold: gameData?.goldTileCountPlayer3 ?? gameData?.gold_tile_count_player3 ?? 0,
+                  silver: gameData?.silverTileCountPlayer3 ?? gameData?.silver_tile_count_player3 ?? 0,
+                  bronze: gameData?.bronzeTileCountPlayer3 ?? gameData?.bronze_tile_count_player3 ?? 0,
+                  iron: gameData?.ironTileCountPlayer3 ?? gameData?.iron_tile_count_player3 ?? 0
+                },
+                {
+                  gold: gameData?.goldTileCountPlayer4 ?? gameData?.gold_tile_count_player4 ?? 0,
+                  silver: gameData?.silverTileCountPlayer4 ?? gameData?.silver_tile_count_player4 ?? 0,
+                  bronze: gameData?.bronzeTileCountPlayer4 ?? gameData?.bronze_tile_count_player4 ?? 0,
+                  iron: gameData?.ironTileCountPlayer4 ?? gameData?.iron_tile_count_player4 ?? 0
+                }
+              ];
+              
+              // Log tier counts for all players
+              console.log('Tier counts for all players:', tierCounts);
+              
+              // Get tier bonus XP per minute values - try both camelCase and snake_case
+              const goldXpPerMin = gameData?.goldTierBonusXpPerMin ?? gameData?.gold_tier_bonus_xp_per_min ?? 100;
+              const silverXpPerMin = gameData?.silverTierBonusXpPerMin ?? gameData?.silver_tier_bonus_xp_per_min ?? 50;
+              const bronzeXpPerMin = gameData?.bronzeTierBonusXpPerMin ?? gameData?.bronze_tier_bonus_xp_per_min ?? 10;
+              const ironXpPerMin = gameData?.ironTierBonusXpPerMin ?? gameData?.iron_tier_bonus_xp_per_min ?? 5;
+              
+              console.log('Tier bonus XP per min:', { goldXpPerMin, silverXpPerMin, bronzeXpPerMin, ironXpPerMin });
+              
+              // Calculate bonus XP per minute for each player
+              const calculateBonusXpPerMin = (tierCount: { gold: number; silver: number; bronze: number; iron: number }, playerIndex: number) => {
+                const bonus = (tierCount.gold * goldXpPerMin) +
+                       (tierCount.silver * silverXpPerMin) +
+                       (tierCount.bronze * bronzeXpPerMin) +
+                       (tierCount.iron * ironXpPerMin);
+                console.log(`Player ${playerIndex + 1} bonus calculation:`, {
+                  gold: `${tierCount.gold} * ${goldXpPerMin} = ${tierCount.gold * goldXpPerMin}`,
+                  silver: `${tierCount.silver} * ${silverXpPerMin} = ${tierCount.silver * silverXpPerMin}`,
+                  bronze: `${tierCount.bronze} * ${bronzeXpPerMin} = ${tierCount.bronze * bronzeXpPerMin}`,
+                  iron: `${tierCount.iron} * ${ironXpPerMin} = ${tierCount.iron * ironXpPerMin}`,
+                  total: bonus
+                });
+                return bonus;
+              };
+              
+              const bonusXpPerMinValues = tierCounts.map((tc, idx) => calculateBonusXpPerMin(tc, idx));
+              console.log('Final bonus XP per min values:', bonusXpPerMinValues);
+              
               // Calculate simulated XP for each player on-the-fly
-              const calculateSimulatedXP = (savedXP: number, timestamp: number, tileCount: number) => {
+              const calculateSimulatedXP = (savedXP: number, timestamp: number, tileCount: number, bonusXpPerMin: number) => {
                 const currentTime = Math.floor(Date.now() / 1000);
                 const timeDiff = currentTime - timestamp;
                 if (timeDiff > 60) {
                   const minutesElapsed = Math.floor(timeDiff / 60);
                   const xpGained = minutesElapsed * xpPerMinutePerTile * tileCount;
-                  return savedXP + xpGained;
+                  const bonusXpGained = minutesElapsed * bonusXpPerMin;
+                  return {
+                    total: savedXP + xpGained + bonusXpGained,
+                    baseXpGained: xpGained,
+                    bonusXpGained: bonusXpGained
+                  };
                 }
-                return savedXP;
+                return {
+                  total: savedXP,
+                  baseXpGained: 0,
+                  bonusXpGained: 0
+                };
               };
               
-              const simulatedXpValues = [
-                calculateSimulatedXP(savedXpValues[0], xpTimestamps[0], tileCounts[0]),
-                calculateSimulatedXP(savedXpValues[1], xpTimestamps[1], tileCounts[1]),
-                calculateSimulatedXP(savedXpValues[2], xpTimestamps[2], tileCounts[2]),
-                calculateSimulatedXP(savedXpValues[3], xpTimestamps[3], tileCounts[3])
+              const simulatedXpData = [
+                calculateSimulatedXP(savedXpValues[0], xpTimestamps[0], tileCounts[0], bonusXpPerMinValues[0]),
+                calculateSimulatedXP(savedXpValues[1], xpTimestamps[1], tileCounts[1], bonusXpPerMinValues[1]),
+                calculateSimulatedXP(savedXpValues[2], xpTimestamps[2], tileCounts[2], bonusXpPerMinValues[2]),
+                calculateSimulatedXP(savedXpValues[3], xpTimestamps[3], tileCounts[3], bonusXpPerMinValues[3])
               ];
               
               // Create player data array with XP and tile counts
@@ -400,7 +478,8 @@ export const UI: React.FC<UIProps> = ({
                 const player = HexTile.players[playerIndex];
                 const tileCount = tileCounts[playerIndex];
                 const savedXp = savedXpValues[playerIndex];
-                const simulatedXp = simulatedXpValues[playerIndex];
+                const simulatedXpDataItem = simulatedXpData[playerIndex];
+                const simulatedXp = simulatedXpDataItem.total;
                 const color = PLAYER_COLORS[playerIndex];
                 const colorHex = `#${color.toString(16).padStart(6, '0')}`;
                 const playerNames = ['Red', 'Yellow', 'Green', 'Blue'];
@@ -416,6 +495,9 @@ export const UI: React.FC<UIProps> = ({
                   tileCount,
                   savedXp,
                   simulatedXp,
+                  baseXpGained: simulatedXpDataItem.baseXpGained,
+                  bonusXpGained: simulatedXpDataItem.bonusXpGained,
+                  bonusXpPerMin: bonusXpPerMinValues[playerIndex],
                   color,
                   colorHex,
                   playerName: playerNames[playerIndex],
@@ -453,12 +535,14 @@ export const UI: React.FC<UIProps> = ({
                       display: 'flex', 
                       flexDirection: 'column',
                       flex: 1,
-                      gap: '2px'
+                      gap: '2px',
+                      position: 'relative'
                     }}>
                       <div style={{ 
                         display: 'flex', 
                         alignItems: 'center', 
-                        gap: '8px' 
+                        gap: '8px',
+                        position: 'relative'
                       }}>
                         <span style={{ color: '#888', fontSize: '12px' }}>{player.playerName}</span>
                         {player.isCurrentUser && (
@@ -471,7 +555,12 @@ export const UI: React.FC<UIProps> = ({
                               padding: '4px 12px',
                               fontSize: '12px',
                               fontWeight: 'bold',
-                              cursor: 'default'
+                              cursor: 'default',
+                              position: 'absolute',
+                              left: '50px',
+                              top: '50%',
+                              transform: 'translateY(-50%)',
+                              whiteSpace: 'nowrap'
                             }}
                           >
                             YOU
@@ -491,7 +580,12 @@ export const UI: React.FC<UIProps> = ({
                               fontWeight: 'bold',
                               cursor: joiningGame ? 'not-allowed' : 'pointer',
                               opacity: joiningGame ? 0.6 : 1,
-                              transition: 'opacity 0.2s ease'
+                              transition: 'opacity 0.2s ease',
+                              position: 'absolute',
+                              left: '50px',
+                              top: '50%',
+                              transform: 'translateY(-50%)',
+                              whiteSpace: 'nowrap'
                             }}
                           >
                             {joiningGame ? 'JOINING...' : 'JOIN'}
@@ -514,14 +608,12 @@ export const UI: React.FC<UIProps> = ({
                       <span style={{ color: '#00ff00', fontWeight: 'bold', fontSize: '14px' }}>
                         {player.simulatedXp}
                       </span>
-                      {player.simulatedXp > player.savedXp && (
-                        <span style={{ color: '#888', fontSize: '10px' }}>
-                          ({player.savedXp} + {player.simulatedXp - player.savedXp})
-                        </span>
-                      )}
                     </div>
                     <span style={{ color: '#ffa500', minWidth: '80px', textAlign: 'right' }}>
                       {player.tileCount}
+                    </span>
+                    <span style={{ color: '#ffd700', minWidth: '80px', textAlign: 'right', fontWeight: 'bold' }}>
+                      {player.bonusXpPerMin}
                     </span>
                   </div>
                 );

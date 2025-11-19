@@ -3,7 +3,7 @@ import { Program, AnchorProvider, Idl, Wallet as AnchorWallet, BN } from '@coral
 import { WalletContextState } from '@solana/wallet-adapter-react';
 import { Hexone } from '../../../program/hexone/target/types/hexone';
 
-export const PROGRAM_ID = new PublicKey('D3sXMGZYUNN3DeQr2tUSKjgN8qYXcRHPCSSaJMAPUFzP');
+export const PROGRAM_ID = new PublicKey('4hCMsw4pRN8VsyPg6USUEyEmnX5VTApEAWyEmMdrrtGj');
 
 export const IDL: Idl = {
   "version": "0.1.0",
@@ -382,6 +382,86 @@ export const IDL: Idl = {
                 144
               ]
             }
+          },
+          {
+            "name": "ironTileCountPlayer1",
+            "type": "u8"
+          },
+          {
+            "name": "bronzeTileCountPlayer1",
+            "type": "u8"
+          },
+          {
+            "name": "silverTileCountPlayer1",
+            "type": "u8"
+          },
+          {
+            "name": "goldTileCountPlayer1",
+            "type": "u8"
+          },
+          {
+            "name": "ironTileCountPlayer2",
+            "type": "u8"
+          },
+          {
+            "name": "bronzeTileCountPlayer2",
+            "type": "u8"
+          },
+          {
+            "name": "silverTileCountPlayer2",
+            "type": "u8"
+          },
+          {
+            "name": "goldTileCountPlayer2",
+            "type": "u8"
+          },
+          {
+            "name": "ironTileCountPlayer3",
+            "type": "u8"
+          },
+          {
+            "name": "bronzeTileCountPlayer3",
+            "type": "u8"
+          },
+          {
+            "name": "silverTileCountPlayer3",
+            "type": "u8"
+          },
+          {
+            "name": "goldTileCountPlayer3",
+            "type": "u8"
+          },
+          {
+            "name": "ironTileCountPlayer4",
+            "type": "u8"
+          },
+          {
+            "name": "bronzeTileCountPlayer4",
+            "type": "u8"
+          },
+          {
+            "name": "silverTileCountPlayer4",
+            "type": "u8"
+          },
+          {
+            "name": "goldTileCountPlayer4",
+            "type": "u8"
+          },
+          {
+            "name": "goldTierBonusXpPerMin",
+            "type": "u8"
+          },
+          {
+            "name": "silverTierBonusXpPerMin",
+            "type": "u8"
+          },
+          {
+            "name": "bronzeTierBonusXpPerMin",
+            "type": "u8"
+          },
+          {
+            "name": "ironTierBonusXpPerMin",
+            "type": "u8"
           },
           {
             "name": "gameState",
@@ -967,6 +1047,28 @@ export interface GameAccount {
   rows: number;
   columns: number;
   resourcesPerMinute: number;
+  // Tier counts for each player
+  ironTileCountPlayer1?: number;
+  bronzeTileCountPlayer1?: number;
+  silverTileCountPlayer1?: number;
+  goldTileCountPlayer1?: number;
+  ironTileCountPlayer2?: number;
+  bronzeTileCountPlayer2?: number;
+  silverTileCountPlayer2?: number;
+  goldTileCountPlayer2?: number;
+  ironTileCountPlayer3?: number;
+  bronzeTileCountPlayer3?: number;
+  silverTileCountPlayer3?: number;
+  goldTileCountPlayer3?: number;
+  ironTileCountPlayer4?: number;
+  bronzeTileCountPlayer4?: number;
+  silverTileCountPlayer4?: number;
+  goldTileCountPlayer4?: number;
+  // Tier bonus XP per minute
+  goldTierBonusXpPerMin?: number;
+  silverTierBonusXpPerMin?: number;
+  bronzeTierBonusXpPerMin?: number;
+  ironTierBonusXpPerMin?: number;
 }
 
 export interface GameAccountData {
@@ -1216,8 +1318,34 @@ export class HexoneClient {
         tileData.push({ color: 0, resourceCount: 0 });
       }
       
+      // Read tier counts (16 u8s = 16 bytes) - starts after tileData
+      const tierCountsOffset = tileDataStartOffset + (144 * 4);
+      const ironTileCountPlayer1 = data.length > tierCountsOffset ? data.readUInt8(tierCountsOffset) : 0;
+      const bronzeTileCountPlayer1 = data.length > tierCountsOffset + 1 ? data.readUInt8(tierCountsOffset + 1) : 0;
+      const silverTileCountPlayer1 = data.length > tierCountsOffset + 2 ? data.readUInt8(tierCountsOffset + 2) : 0;
+      const goldTileCountPlayer1 = data.length > tierCountsOffset + 3 ? data.readUInt8(tierCountsOffset + 3) : 0;
+      const ironTileCountPlayer2 = data.length > tierCountsOffset + 4 ? data.readUInt8(tierCountsOffset + 4) : 0;
+      const bronzeTileCountPlayer2 = data.length > tierCountsOffset + 5 ? data.readUInt8(tierCountsOffset + 5) : 0;
+      const silverTileCountPlayer2 = data.length > tierCountsOffset + 6 ? data.readUInt8(tierCountsOffset + 6) : 0;
+      const goldTileCountPlayer2 = data.length > tierCountsOffset + 7 ? data.readUInt8(tierCountsOffset + 7) : 0;
+      const ironTileCountPlayer3 = data.length > tierCountsOffset + 8 ? data.readUInt8(tierCountsOffset + 8) : 0;
+      const bronzeTileCountPlayer3 = data.length > tierCountsOffset + 9 ? data.readUInt8(tierCountsOffset + 9) : 0;
+      const silverTileCountPlayer3 = data.length > tierCountsOffset + 10 ? data.readUInt8(tierCountsOffset + 10) : 0;
+      const goldTileCountPlayer3 = data.length > tierCountsOffset + 11 ? data.readUInt8(tierCountsOffset + 11) : 0;
+      const ironTileCountPlayer4 = data.length > tierCountsOffset + 12 ? data.readUInt8(tierCountsOffset + 12) : 0;
+      const bronzeTileCountPlayer4 = data.length > tierCountsOffset + 13 ? data.readUInt8(tierCountsOffset + 13) : 0;
+      const silverTileCountPlayer4 = data.length > tierCountsOffset + 14 ? data.readUInt8(tierCountsOffset + 14) : 0;
+      const goldTileCountPlayer4 = data.length > tierCountsOffset + 15 ? data.readUInt8(tierCountsOffset + 15) : 0;
+      
+      // Read tier bonus XP per minute (4 u8s = 4 bytes)
+      const tierBonusXpOffset = tierCountsOffset + 16;
+      const goldTierBonusXpPerMin = data.length > tierBonusXpOffset ? data.readUInt8(tierBonusXpOffset) : 100;
+      const silverTierBonusXpPerMin = data.length > tierBonusXpOffset + 1 ? data.readUInt8(tierBonusXpOffset + 1) : 50;
+      const bronzeTierBonusXpPerMin = data.length > tierBonusXpOffset + 2 ? data.readUInt8(tierBonusXpOffset + 2) : 10;
+      const ironTierBonusXpPerMin = data.length > tierBonusXpOffset + 3 ? data.readUInt8(tierBonusXpOffset + 3) : 5;
+      
       // Read game state and other fields (5 bytes)
-      const gameStateOffset = tileDataStartOffset + (144 * 4);
+      const gameStateOffset = tierBonusXpOffset + 4;
       let gameState = 0;
       let rows = 11;
       let columns = 13;
@@ -1247,7 +1375,27 @@ export class HexoneClient {
         tileData,
         rows,
         columns,
-        resourcesPerMinute
+        resourcesPerMinute,
+        ironTileCountPlayer1,
+        bronzeTileCountPlayer1,
+        silverTileCountPlayer1,
+        goldTileCountPlayer1,
+        ironTileCountPlayer2,
+        bronzeTileCountPlayer2,
+        silverTileCountPlayer2,
+        goldTileCountPlayer2,
+        ironTileCountPlayer3,
+        bronzeTileCountPlayer3,
+        silverTileCountPlayer3,
+        goldTileCountPlayer3,
+        ironTileCountPlayer4,
+        bronzeTileCountPlayer4,
+        silverTileCountPlayer4,
+        goldTileCountPlayer4,
+        goldTierBonusXpPerMin,
+        silverTierBonusXpPerMin,
+        bronzeTierBonusXpPerMin,
+        ironTierBonusXpPerMin
       };
     } catch (error) {
       console.error('Error in manual game parsing:', error);
@@ -1265,7 +1413,7 @@ export class HexoneClient {
         return null;
       }
       
-      const expectedSize = 8 + 32*5 + 8*6 + 4*16 + 4 + 144*4 + 5 + 3; // 868
+      const expectedSize = 8 + 32*5 + 8*6 + 4*16 + 4 + 144*4 + 16 + 4 + 5 + 3; // 888 (added 20 bytes for tier counts and tier bonus XP)
       const actualSize = accountInfo.data.length;
       
       console.log('Game account data length:', actualSize);
@@ -1326,7 +1474,29 @@ export class HexoneClient {
         tileData,
         rows: account.rows || 11,
         columns: account.columns || 13,
-        resourcesPerMinute: account.resourcesPerMinute || 0
+        resourcesPerMinute: account.resourcesPerMinute || 0,
+        // Tier counts for each player
+        ironTileCountPlayer1: account.ironTileCountPlayer1 ?? 0,
+        bronzeTileCountPlayer1: account.bronzeTileCountPlayer1 ?? 0,
+        silverTileCountPlayer1: account.silverTileCountPlayer1 ?? 0,
+        goldTileCountPlayer1: account.goldTileCountPlayer1 ?? 0,
+        ironTileCountPlayer2: account.ironTileCountPlayer2 ?? 0,
+        bronzeTileCountPlayer2: account.bronzeTileCountPlayer2 ?? 0,
+        silverTileCountPlayer2: account.silverTileCountPlayer2 ?? 0,
+        goldTileCountPlayer2: account.goldTileCountPlayer2 ?? 0,
+        ironTileCountPlayer3: account.ironTileCountPlayer3 ?? 0,
+        bronzeTileCountPlayer3: account.bronzeTileCountPlayer3 ?? 0,
+        silverTileCountPlayer3: account.silverTileCountPlayer3 ?? 0,
+        goldTileCountPlayer3: account.goldTileCountPlayer3 ?? 0,
+        ironTileCountPlayer4: account.ironTileCountPlayer4 ?? 0,
+        bronzeTileCountPlayer4: account.bronzeTileCountPlayer4 ?? 0,
+        silverTileCountPlayer4: account.silverTileCountPlayer4 ?? 0,
+        goldTileCountPlayer4: account.goldTileCountPlayer4 ?? 0,
+        // Tier bonus XP per minute
+        goldTierBonusXpPerMin: account.goldTierBonusXpPerMin ?? 100,
+        silverTierBonusXpPerMin: account.silverTierBonusXpPerMin ?? 50,
+        bronzeTierBonusXpPerMin: account.bronzeTierBonusXpPerMin ?? 10,
+        ironTierBonusXpPerMin: account.ironTierBonusXpPerMin ?? 5
       };
     } catch (error) {
       console.error('Error fetching game:', error);

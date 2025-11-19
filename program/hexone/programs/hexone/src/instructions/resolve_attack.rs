@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use crate::state::game::{Game, GAME_STATE_IN_PROGRESS};
+use crate::state::game::{Game, GAME_STATE_IN_PROGRESS, get_tile_tier, update_tier_count_on_gain, update_tier_count_on_loss, calculate_tier_bonus_xp};
 use crate::state::defender::Defender;
 use crate::error::HexoneError;
 use sha2::{Sha256, Digest};
@@ -36,66 +36,150 @@ fn update_all_players_xp(game: &mut Game, current_time: i64) -> Result<()> {
     
     // Update player 1 XP
     if current_time - game.xp_timestamp_player1 > 60 {
+        let time_diff = current_time - game.xp_timestamp_player1;
+        let minutes_elapsed = (time_diff / 60) as u32;
+        
+        // Calculate base XP from tiles
         let calculated_xp = calculate_new_xp(
             current_time,
             game.xp_timestamp_player1,
             xp_per_minute_per_tile,
             game.tile_count_color1,
         );
-        game.xp_player1 = game.xp_player1
-            .checked_add(calculated_xp)
+        
+        // Calculate tier bonus XP
+        let tier_bonus_xp = calculate_tier_bonus_xp(
+            minutes_elapsed,
+            game.gold_tile_count_player1,
+            game.silver_tile_count_player1,
+            game.bronze_tile_count_player1,
+            game.iron_tile_count_player1,
+            game.gold_tier_bonus_xp_per_min,
+            game.silver_tier_bonus_xp_per_min,
+            game.bronze_tier_bonus_xp_per_min,
+            game.iron_tier_bonus_xp_per_min,
+        )?;
+        
+        // Add both base XP and tier bonus XP
+        let total_xp = calculated_xp
+            .checked_add(tier_bonus_xp)
             .ok_or(HexoneError::Invalid)?;
-        let time_diff = current_time - game.xp_timestamp_player1;
-        let minutes_elapsed = time_diff / 60;
-        game.xp_timestamp_player1 = game.xp_timestamp_player1 + (minutes_elapsed * 60);
+        
+        game.xp_player1 = game.xp_player1
+            .checked_add(total_xp)
+            .ok_or(HexoneError::Invalid)?;
+        game.xp_timestamp_player1 = game.xp_timestamp_player1 + (minutes_elapsed as i64 * 60);
     }
     
     // Update player 2 XP
     if current_time - game.xp_timestamp_player2 > 60 {
+        let time_diff = current_time - game.xp_timestamp_player2;
+        let minutes_elapsed = (time_diff / 60) as u32;
+        
+        // Calculate base XP from tiles
         let calculated_xp = calculate_new_xp(
             current_time,
             game.xp_timestamp_player2,
             xp_per_minute_per_tile,
             game.tile_count_color2,
         );
-        game.xp_player2 = game.xp_player2
-            .checked_add(calculated_xp)
+        
+        // Calculate tier bonus XP
+        let tier_bonus_xp = calculate_tier_bonus_xp(
+            minutes_elapsed,
+            game.gold_tile_count_player2,
+            game.silver_tile_count_player2,
+            game.bronze_tile_count_player2,
+            game.iron_tile_count_player2,
+            game.gold_tier_bonus_xp_per_min,
+            game.silver_tier_bonus_xp_per_min,
+            game.bronze_tier_bonus_xp_per_min,
+            game.iron_tier_bonus_xp_per_min,
+        )?;
+        
+        // Add both base XP and tier bonus XP
+        let total_xp = calculated_xp
+            .checked_add(tier_bonus_xp)
             .ok_or(HexoneError::Invalid)?;
-        let time_diff = current_time - game.xp_timestamp_player2;
-        let minutes_elapsed = time_diff / 60;
-        game.xp_timestamp_player2 = game.xp_timestamp_player2 + (minutes_elapsed * 60);
+        
+        game.xp_player2 = game.xp_player2
+            .checked_add(total_xp)
+            .ok_or(HexoneError::Invalid)?;
+        game.xp_timestamp_player2 = game.xp_timestamp_player2 + (minutes_elapsed as i64 * 60);
     }
     
     // Update player 3 XP
     if current_time - game.xp_timestamp_player3 > 60 {
+        let time_diff = current_time - game.xp_timestamp_player3;
+        let minutes_elapsed = (time_diff / 60) as u32;
+        
+        // Calculate base XP from tiles
         let calculated_xp = calculate_new_xp(
             current_time,
             game.xp_timestamp_player3,
             xp_per_minute_per_tile,
             game.tile_count_color3,
         );
-        game.xp_player3 = game.xp_player3
-            .checked_add(calculated_xp)
+        
+        // Calculate tier bonus XP
+        let tier_bonus_xp = calculate_tier_bonus_xp(
+            minutes_elapsed,
+            game.gold_tile_count_player3,
+            game.silver_tile_count_player3,
+            game.bronze_tile_count_player3,
+            game.iron_tile_count_player3,
+            game.gold_tier_bonus_xp_per_min,
+            game.silver_tier_bonus_xp_per_min,
+            game.bronze_tier_bonus_xp_per_min,
+            game.iron_tier_bonus_xp_per_min,
+        )?;
+        
+        // Add both base XP and tier bonus XP
+        let total_xp = calculated_xp
+            .checked_add(tier_bonus_xp)
             .ok_or(HexoneError::Invalid)?;
-        let time_diff = current_time - game.xp_timestamp_player3;
-        let minutes_elapsed = time_diff / 60;
-        game.xp_timestamp_player3 = game.xp_timestamp_player3 + (minutes_elapsed * 60);
+        
+        game.xp_player3 = game.xp_player3
+            .checked_add(total_xp)
+            .ok_or(HexoneError::Invalid)?;
+        game.xp_timestamp_player3 = game.xp_timestamp_player3 + (minutes_elapsed as i64 * 60);
     }
     
     // Update player 4 XP
     if current_time - game.xp_timestamp_player4 > 60 {
+        let time_diff = current_time - game.xp_timestamp_player4;
+        let minutes_elapsed = (time_diff / 60) as u32;
+        
+        // Calculate base XP from tiles
         let calculated_xp = calculate_new_xp(
             current_time,
             game.xp_timestamp_player4,
             xp_per_minute_per_tile,
             game.tile_count_color4,
         );
-        game.xp_player4 = game.xp_player4
-            .checked_add(calculated_xp)
+        
+        // Calculate tier bonus XP
+        let tier_bonus_xp = calculate_tier_bonus_xp(
+            minutes_elapsed,
+            game.gold_tile_count_player4,
+            game.silver_tile_count_player4,
+            game.bronze_tile_count_player4,
+            game.iron_tile_count_player4,
+            game.gold_tier_bonus_xp_per_min,
+            game.silver_tier_bonus_xp_per_min,
+            game.bronze_tier_bonus_xp_per_min,
+            game.iron_tier_bonus_xp_per_min,
+        )?;
+        
+        // Add both base XP and tier bonus XP
+        let total_xp = calculated_xp
+            .checked_add(tier_bonus_xp)
             .ok_or(HexoneError::Invalid)?;
-        let time_diff = current_time - game.xp_timestamp_player4;
-        let minutes_elapsed = time_diff / 60;
-        game.xp_timestamp_player4 = game.xp_timestamp_player4 + (minutes_elapsed * 60);
+        
+        game.xp_player4 = game.xp_player4
+            .checked_add(total_xp)
+            .ok_or(HexoneError::Invalid)?;
+        game.xp_timestamp_player4 = game.xp_timestamp_player4 + (minutes_elapsed as i64 * 60);
     }
     
     Ok(())
@@ -282,6 +366,25 @@ pub fn resolve_attack(ctx: Context<ResolveAttack>) -> Result<()> {
             let old_defender_color = game.tile_data[defender_tile_idx].color;
             let attacker_color = defender.attacker_tile_color;
             
+            // Get defender and attacker player indices
+            let old_defender_index = match old_defender_color {
+                1 => 1,
+                2 => 2,
+                3 => 3,
+                4 => 4,
+                _ => return Err(HexoneError::Invalid.into()),
+            };
+            let attacker_index = match attacker_color {
+                1 => 1,
+                2 => 2,
+                3 => 3,
+                4 => 4,
+                _ => return Err(HexoneError::Invalid.into()),
+            };
+            
+            // Get tier of the tile being transferred
+            let tier = get_tile_tier(defender_tile_idx as u16, game.rows, game.columns);
+            
             // Update tile ownership
             game.tile_data[defender_tile_idx].color = attacker_color;
             game.tile_data[defender_tile_idx].resource_count = 1;
@@ -341,6 +444,10 @@ pub fn resolve_attack(ctx: Context<ResolveAttack>) -> Result<()> {
                 }
                 _ => return Err(HexoneError::Invalid.into()),
             }
+            
+            // Update tier counts: decrement from old owner, increment to new owner
+            update_tier_count_on_loss(game, old_defender_index, tier)?;
+            update_tier_count_on_gain(game, attacker_index, tier)?;
         }
     } else {
         // Defender wins: attacker loses 1 resource per failed attack

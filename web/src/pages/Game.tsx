@@ -296,11 +296,48 @@ const Game: React.FC = () => {
           tileData.push({ color, resourceCount });
       }
       
+      // Read tier counts (16 u8s = 16 bytes) - starts after tileData
+      const tierCountsOffset = 272 + (144 * 4);
+      const ironTileCountPlayer1 = data.length > tierCountsOffset ? data.readUInt8(tierCountsOffset) : 0;
+      const bronzeTileCountPlayer1 = data.length > tierCountsOffset + 1 ? data.readUInt8(tierCountsOffset + 1) : 0;
+      const silverTileCountPlayer1 = data.length > tierCountsOffset + 2 ? data.readUInt8(tierCountsOffset + 2) : 0;
+      const goldTileCountPlayer1 = data.length > tierCountsOffset + 3 ? data.readUInt8(tierCountsOffset + 3) : 0;
+      const ironTileCountPlayer2 = data.length > tierCountsOffset + 4 ? data.readUInt8(tierCountsOffset + 4) : 0;
+      const bronzeTileCountPlayer2 = data.length > tierCountsOffset + 5 ? data.readUInt8(tierCountsOffset + 5) : 0;
+      const silverTileCountPlayer2 = data.length > tierCountsOffset + 6 ? data.readUInt8(tierCountsOffset + 6) : 0;
+      const goldTileCountPlayer2 = data.length > tierCountsOffset + 7 ? data.readUInt8(tierCountsOffset + 7) : 0;
+      const ironTileCountPlayer3 = data.length > tierCountsOffset + 8 ? data.readUInt8(tierCountsOffset + 8) : 0;
+      const bronzeTileCountPlayer3 = data.length > tierCountsOffset + 9 ? data.readUInt8(tierCountsOffset + 9) : 0;
+      const silverTileCountPlayer3 = data.length > tierCountsOffset + 10 ? data.readUInt8(tierCountsOffset + 10) : 0;
+      const goldTileCountPlayer3 = data.length > tierCountsOffset + 11 ? data.readUInt8(tierCountsOffset + 11) : 0;
+      const ironTileCountPlayer4 = data.length > tierCountsOffset + 12 ? data.readUInt8(tierCountsOffset + 12) : 0;
+      const bronzeTileCountPlayer4 = data.length > tierCountsOffset + 13 ? data.readUInt8(tierCountsOffset + 13) : 0;
+      const silverTileCountPlayer4 = data.length > tierCountsOffset + 14 ? data.readUInt8(tierCountsOffset + 14) : 0;
+      const goldTileCountPlayer4 = data.length > tierCountsOffset + 15 ? data.readUInt8(tierCountsOffset + 15) : 0;
+      
+      // Read tier bonus XP per minute (4 u8s = 4 bytes)
+      const tierBonusXpOffset = tierCountsOffset + 16;
+      const goldTierBonusXpPerMin = data.length > tierBonusXpOffset ? data.readUInt8(tierBonusXpOffset) : 100;
+      const silverTierBonusXpPerMin = data.length > tierBonusXpOffset + 1 ? data.readUInt8(tierBonusXpOffset + 1) : 50;
+      const bronzeTierBonusXpPerMin = data.length > tierBonusXpOffset + 2 ? data.readUInt8(tierBonusXpOffset + 2) : 10;
+      const ironTierBonusXpPerMin = data.length > tierBonusXpOffset + 3 ? data.readUInt8(tierBonusXpOffset + 3) : 5;
+      
+      // Skip padding (4 bytes)
+      const paddingOffset = tierBonusXpOffset + 4;
+      
       // Read game state and other fields (5 bytes)
-      const gameStateOffset = 272 + (144 * 4);
-      const gameState = data.readUInt8(gameStateOffset);
-      const rows = data.readUInt8(gameStateOffset + 1);
-      const columns = data.readUInt8(gameStateOffset + 2);
+      const gameStateOffset = paddingOffset + 4;
+      const gameState = data.length > gameStateOffset ? data.readUInt8(gameStateOffset) : 0;
+      const rows = data.length > gameStateOffset + 1 ? data.readUInt8(gameStateOffset + 1) : 11;
+      const columns = data.length > gameStateOffset + 2 ? data.readUInt8(gameStateOffset + 2) : 13;
+      
+      // Log tier counts for debugging
+      console.log('Tier counts read from account:', {
+        player1: { gold: goldTileCountPlayer1, silver: silverTileCountPlayer1, bronze: bronzeTileCountPlayer1, iron: ironTileCountPlayer1 },
+        player2: { gold: goldTileCountPlayer2, silver: silverTileCountPlayer2, bronze: bronzeTileCountPlayer2, iron: ironTileCountPlayer2 },
+        player3: { gold: goldTileCountPlayer3, silver: silverTileCountPlayer3, bronze: bronzeTileCountPlayer3, iron: ironTileCountPlayer3 },
+        player4: { gold: goldTileCountPlayer4, silver: silverTileCountPlayer4, bronze: bronzeTileCountPlayer4, iron: ironTileCountPlayer4 }
+      });
       
       // Map game state to string representation
       let gameStateStr = 'Unknown';
@@ -368,6 +405,30 @@ const Game: React.FC = () => {
       (gameData as any).tileCountColor2 = tileCountColor2;
       (gameData as any).tileCountColor3 = tileCountColor3;
       (gameData as any).tileCountColor4 = tileCountColor4;
+      
+      // Store tier counts
+      (gameData as any).ironTileCountPlayer1 = ironTileCountPlayer1;
+      (gameData as any).bronzeTileCountPlayer1 = bronzeTileCountPlayer1;
+      (gameData as any).silverTileCountPlayer1 = silverTileCountPlayer1;
+      (gameData as any).goldTileCountPlayer1 = goldTileCountPlayer1;
+      (gameData as any).ironTileCountPlayer2 = ironTileCountPlayer2;
+      (gameData as any).bronzeTileCountPlayer2 = bronzeTileCountPlayer2;
+      (gameData as any).silverTileCountPlayer2 = silverTileCountPlayer2;
+      (gameData as any).goldTileCountPlayer2 = goldTileCountPlayer2;
+      (gameData as any).ironTileCountPlayer3 = ironTileCountPlayer3;
+      (gameData as any).bronzeTileCountPlayer3 = bronzeTileCountPlayer3;
+      (gameData as any).silverTileCountPlayer3 = silverTileCountPlayer3;
+      (gameData as any).goldTileCountPlayer3 = goldTileCountPlayer3;
+      (gameData as any).ironTileCountPlayer4 = ironTileCountPlayer4;
+      (gameData as any).bronzeTileCountPlayer4 = bronzeTileCountPlayer4;
+      (gameData as any).silverTileCountPlayer4 = silverTileCountPlayer4;
+      (gameData as any).goldTileCountPlayer4 = goldTileCountPlayer4;
+      
+      // Store tier bonus XP per minute
+      (gameData as any).goldTierBonusXpPerMin = goldTierBonusXpPerMin;
+      (gameData as any).silverTierBonusXpPerMin = silverTierBonusXpPerMin;
+      (gameData as any).bronzeTierBonusXpPerMin = bronzeTierBonusXpPerMin;
+      (gameData as any).ironTierBonusXpPerMin = ironTierBonusXpPerMin;
       
       // Calculate simulated XP for each player
       const calculateSimulatedXP = (savedXP: number, timestamp: number, tileCount: number) => {

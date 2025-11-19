@@ -2,7 +2,14 @@ use anchor_lang::prelude::*;
 use crate::state::game::Game;
 use crate::state::platform::Platform;
 use crate::error::HexoneError;
-use crate::constants::{RESOURCES_PER_MINUTE, XP_PER_MINUTE_PER_TILE};
+use crate::constants::{
+    RESOURCES_PER_MINUTE, 
+    XP_PER_MINUTE_PER_TILE,
+    GOLD_TIER_BONUS_XP_PER_MIN,
+    SILVER_TIER_BONUS_XP_PER_MIN,
+    BRONZE_TIER_BONUS_XP_PER_MIN,
+    IRON_TIER_BONUS_XP_PER_MIN,
+};
 
 #[derive(Accounts)]
 pub struct CreateGame<'info> {
@@ -103,6 +110,34 @@ pub fn create_game(ctx: Context<CreateGame>) -> Result<()> {
     game.tile_count_color2 = 1;
     game.tile_count_color3 = 1;
     game.tile_count_color4 = 1;
+
+    // Initialize tier counts to 0 for all players
+    // Player 1
+    game.iron_tile_count_player1 = 0;
+    game.bronze_tile_count_player1 = 0;
+    game.silver_tile_count_player1 = 0;
+    game.gold_tile_count_player1 = 0;
+    // Player 2
+    game.iron_tile_count_player2 = 0;
+    game.bronze_tile_count_player2 = 0;
+    game.silver_tile_count_player2 = 0;
+    game.gold_tile_count_player2 = 0;
+    // Player 3
+    game.iron_tile_count_player3 = 0;
+    game.bronze_tile_count_player3 = 0;
+    game.silver_tile_count_player3 = 0;
+    game.gold_tile_count_player3 = 0;
+    // Player 4
+    game.iron_tile_count_player4 = 0;
+    game.bronze_tile_count_player4 = 0;
+    game.silver_tile_count_player4 = 0;
+    game.gold_tile_count_player4 = 0;
+
+    // Initialize tier bonus XP per minute
+    game.gold_tier_bonus_xp_per_min = GOLD_TIER_BONUS_XP_PER_MIN;
+    game.silver_tier_bonus_xp_per_min = SILVER_TIER_BONUS_XP_PER_MIN;
+    game.bronze_tier_bonus_xp_per_min = BRONZE_TIER_BONUS_XP_PER_MIN;
+    game.iron_tier_bonus_xp_per_min = IRON_TIER_BONUS_XP_PER_MIN;
 
     // Increment platform game count
     platform.game_count += 1;

@@ -5,7 +5,7 @@ import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
 import { expect } from "chai";
 
 // Program ID from Anchor.toml
-const PROGRAM_ID = new PublicKey("D3sXMGZYUNN3DeQr2tUSKjgN8qYXcRHPCSSaJMAPUFzP");
+const PROGRAM_ID = new PublicKey("4hCMsw4pRN8VsyPg6USUEyEmnX5VTApEAWyEmMdrrtGj");
 
 // Game constants
 const RESOURCES_PER_MINUTE = 10;
@@ -16,6 +16,44 @@ describe("hexone", () => {
 
   const program = anchor.workspace.hexone as Program<Hexone>;
   const provider = anchor.getProvider();
+
+  // Helper function to log tier counts for all players
+  const logTierCounts = async (gamePDA: PublicKey, label: string = "Tier Counts") => {
+    try {
+      const gameAccount = await program.account.game.fetch(gamePDA);
+      const getNumber = (value: any): number => {
+        return typeof value === 'number' ? value : value.toNumber();
+      };
+
+      console.log(`\n=== ${label} ===`);
+      console.log("Player 1 (Red):");
+      console.log(`  Gold:   ${getNumber(gameAccount.goldTileCountPlayer1)}`);
+      console.log(`  Silver: ${getNumber(gameAccount.silverTileCountPlayer1)}`);
+      console.log(`  Bronze: ${getNumber(gameAccount.bronzeTileCountPlayer1)}`);
+      console.log(`  Iron:   ${getNumber(gameAccount.ironTileCountPlayer1)}`);
+      
+      console.log("Player 2 (Yellow):");
+      console.log(`  Gold:   ${getNumber(gameAccount.goldTileCountPlayer2)}`);
+      console.log(`  Silver: ${getNumber(gameAccount.silverTileCountPlayer2)}`);
+      console.log(`  Bronze: ${getNumber(gameAccount.bronzeTileCountPlayer2)}`);
+      console.log(`  Iron:   ${getNumber(gameAccount.ironTileCountPlayer2)}`);
+      
+      console.log("Player 3 (Green):");
+      console.log(`  Gold:   ${getNumber(gameAccount.goldTileCountPlayer3)}`);
+      console.log(`  Silver: ${getNumber(gameAccount.silverTileCountPlayer3)}`);
+      console.log(`  Bronze: ${getNumber(gameAccount.bronzeTileCountPlayer3)}`);
+      console.log(`  Iron:   ${getNumber(gameAccount.ironTileCountPlayer3)}`);
+      
+      console.log("Player 4 (Blue):");
+      console.log(`  Gold:   ${getNumber(gameAccount.goldTileCountPlayer4)}`);
+      console.log(`  Silver: ${getNumber(gameAccount.silverTileCountPlayer4)}`);
+      console.log(`  Bronze: ${getNumber(gameAccount.bronzeTileCountPlayer4)}`);
+      console.log(`  Iron:   ${getNumber(gameAccount.ironTileCountPlayer4)}`);
+      console.log("==================\n");
+    } catch (error) {
+      console.error("Error logging tier counts:", error);
+    }
+  };
 
   // Test accounts
   const admin = Keypair.generate();
@@ -294,6 +332,9 @@ describe("hexone", () => {
       expect(gameAccount.player4.toBase58()).to.equal(player4.publicKey.toBase58());
       expect(gameAccount.gameState).to.equal(1); // IN_PROGRESS
 
+      // Log initial tier counts (should all be 0)
+      await logTierCounts(gamePDA, "Initial Tier Counts (after join)");
+
       // Verify player states
       const [player1Account, player4Account] = await Promise.all([
         program.account.player.fetch(player1PDA),
@@ -370,6 +411,9 @@ describe("hexone", () => {
       expect(gameAccount.tileData[11].resourceCount).to.be.at.least(89); // Should have most resources
       
       console.log("Resources successfully moved to tile 11");
+      
+      // Log tier counts after territory expansion
+      await logTierCounts(gamePDA, "Tier Counts (after territory expansion)");
     } catch (error) {
       console.error("Error moving resources:", error);
       throw error;
@@ -554,6 +598,9 @@ describe("hexone", () => {
           }
         });
         
+        // Log tier counts after attack resolution
+        await logTierCounts(gamePDA, `Tier Counts (after attack round ${attackRound})`);
+        
         // Check if tile was taken (color changed to attacker's color)
         const newDefenderColor = gameAccount.tileData[defenderTileIndex].color;
         const newDefenderResources = gameAccount.tileData[defenderTileIndex].resourceCount;
@@ -580,9 +627,126 @@ describe("hexone", () => {
       console.log(`Tile ${defenderTileIndex} color:`, finalGameAccount.tileData[defenderTileIndex].color);
       console.log(`Tile ${defenderTileIndex} resources:`, finalGameAccount.tileData[defenderTileIndex].resourceCount);
       
+      // Log final tier counts
+      await logTierCounts(gamePDA, "Final Tier Counts (after all attacks)");
+      
       console.log("Attack test completed!");
     } catch (error) {
       console.error("Error in attack test:", error);
+      throw error;
+    }
+  });
+
+  it("Player 3 (Green) moves to center tile", async () => {
+    try {
+      // Center tile is at row 5, col 6 (0-indexed)
+      // Tile index = row * columns + column = 5 * 13 + 6 = 71
+      const centerTileIndex = 71;
+      
+      // Player 3 (Green) starts at tile 130 (bottom left)
+      const player3StartTile = 130;
+      
+      // Get initial state
+      let gameAccount = await program.account.game.fetch(gamePDA);
+      
+      console.log("\n=== Before Move to Center ===");
+      console.log(`Player 3 starting tile (${player3StartTile}) resources:`, gameAccount.tileData[player3StartTile].resourceCount);
+      console.log(`Center tile (${centerTileIndex}) color:`, gameAccount.tileData[centerTileIndex].color);
+      console.log(`Center tile (${centerTileIndex}) resources:`, gameAccount.tileData[centerTileIndex].resourceCount);
+      
+      // Log tier counts before move
+      await logTierCounts(gamePDA, "Tier Counts (before move to center)");
+      
+      // Move resources step by step from tile 130 to center tile 71
+      // Path: move up rows first, then across columns
+      // Tile 130 (row 10, col 0) -> tile 71 (row 5, col 6)
+      let currentTile = player3StartTile;
+      const targetTile = centerTileIndex;
+      
+      // Path to center: move up rows, then across columns
+      const tilesToMove = [
+        117, // row 9, col 0
+        104, // row 8, col 0
+        91,  // row 7, col 0
+        78,  // row 6, col 0
+        65,  // row 5, col 0
+        66,  // row 5, col 1
+        67,  // row 5, col 2
+        68,  // row 5, col 3
+        69,  // row 5, col 4
+        70,  // row 5, col 5
+        71,  // row 5, col 6 (center)
+      ];
+      
+      // Move resources along the path
+      for (let i = 0; i < tilesToMove.length; i++) {
+        const nextTile = tilesToMove[i];
+        gameAccount = await program.account.game.fetch(gamePDA);
+        const currentResources = gameAccount.tileData[currentTile].resourceCount;
+        
+        // Move all resources except 1 (must leave at least 1)
+        const resourcesToMove = currentResources > 1 ? currentResources - 1 : 0;
+        
+        if (resourcesToMove > 0) {
+          const currentRow = Math.floor(currentTile / 13);
+          const currentCol = currentTile % 13;
+          const nextRow = Math.floor(nextTile / 13);
+          const nextCol = nextTile % 13;
+          
+          console.log(`Moving ${resourcesToMove} resources from tile ${currentTile} (row ${currentRow}, col ${currentCol}) to tile ${nextTile} (row ${nextRow}, col ${nextCol})`);
+          
+          try {
+            const tx = await program.methods
+              .moveResources(currentTile, nextTile, resourcesToMove)
+              .accounts({
+                wallet: player3.publicKey,
+                player: player3PDA,
+                game: gamePDA,
+              })
+              .signers([player3])
+              .rpc();
+            
+            console.log(`Move from ${currentTile} to ${nextTile} tx:`, tx);
+            await provider.connection.confirmTransaction(tx);
+          } catch (error: any) {
+            console.error(`Failed to move from tile ${currentTile} to tile ${nextTile}:`, error.message);
+            throw new Error(`Tiles ${currentTile} and ${nextTile} are not adjacent or move failed: ${error.message}`);
+          }
+        }
+        
+        currentTile = nextTile;
+        
+        // If we've reached the center, break
+        if (nextTile === targetTile) {
+          break;
+        }
+      }
+      
+      // Verify final state
+      gameAccount = await program.account.game.fetch(gamePDA);
+      
+      console.log("\n=== After Move to Center ===");
+      console.log(`Center tile (${centerTileIndex}) color:`, gameAccount.tileData[centerTileIndex].color);
+      console.log(`Center tile (${centerTileIndex}) resources:`, gameAccount.tileData[centerTileIndex].resourceCount);
+      expect(gameAccount.tileData[centerTileIndex].color).to.equal(3); // Green
+      expect(gameAccount.tileData[centerTileIndex].resourceCount).to.be.greaterThan(1);
+      
+      console.log("\n🎯 Player 3 (Green) now controls the center tile (Gold tier)!");
+      
+      // Log tier counts after move - Player 3 should have 1 gold tile
+      await logTierCounts(gamePDA, "Tier Counts (after Green moves to center)");
+      
+      // Verify Player 3 has the gold tile
+      const getNumber = (value: any): number => {
+        return typeof value === 'number' ? value : value.toNumber();
+      };
+      const player3GoldCount = getNumber(gameAccount.goldTileCountPlayer3);
+      console.log(`\n✅ Player 3 (Green) Gold tile count: ${player3GoldCount} (should be 1)`);
+      expect(player3GoldCount).to.equal(1);
+      
+      console.log("\n✓ Player 3 successfully moved to center tile!");
+    } catch (error) {
+      console.error("Error in move to center test:", error);
       throw error;
     }
   });
@@ -732,6 +896,9 @@ describe("hexone", () => {
       console.log(`  Player 2: ${finalSpent.player2}`);
       console.log(`  Player 3: ${finalSpent.player3}`);
       console.log(`  Player 4: ${finalSpent.player4}`);
+
+      // Log tier counts (should be unchanged after adding resources)
+      await logTierCounts(gamePDA, "Tier Counts (after adding resources)");
 
       // Verify resources were added to tiles
       expect(finalResources.player1).to.equal(initialResources.player1 + resourcesToAdd);

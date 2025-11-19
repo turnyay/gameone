@@ -1,5 +1,5 @@
 {
-  "address": "D3sXMGZYUNN3DeQr2tUSKjgN8qYXcRHPCSSaJMAPUFzP",
+  "address": "4hCMsw4pRN8VsyPg6USUEyEmnX5VTApEAWyEmMdrrtGj",
   "metadata": {
     "name": "hexone",
     "version": "0.1.0",
@@ -847,6 +847,95 @@
                   }
                 },
                 144
+              ]
+            }
+          },
+          {
+            "name": "ironTileCountPlayer1",
+            "type": "u8"
+          },
+          {
+            "name": "bronzeTileCountPlayer1",
+            "type": "u8"
+          },
+          {
+            "name": "silverTileCountPlayer1",
+            "type": "u8"
+          },
+          {
+            "name": "goldTileCountPlayer1",
+            "type": "u8"
+          },
+          {
+            "name": "ironTileCountPlayer2",
+            "type": "u8"
+          },
+          {
+            "name": "bronzeTileCountPlayer2",
+            "type": "u8"
+          },
+          {
+            "name": "silverTileCountPlayer2",
+            "type": "u8"
+          },
+          {
+            "name": "goldTileCountPlayer2",
+            "type": "u8"
+          },
+          {
+            "name": "ironTileCountPlayer3",
+            "type": "u8"
+          },
+          {
+            "name": "bronzeTileCountPlayer3",
+            "type": "u8"
+          },
+          {
+            "name": "silverTileCountPlayer3",
+            "type": "u8"
+          },
+          {
+            "name": "goldTileCountPlayer3",
+            "type": "u8"
+          },
+          {
+            "name": "ironTileCountPlayer4",
+            "type": "u8"
+          },
+          {
+            "name": "bronzeTileCountPlayer4",
+            "type": "u8"
+          },
+          {
+            "name": "silverTileCountPlayer4",
+            "type": "u8"
+          },
+          {
+            "name": "goldTileCountPlayer4",
+            "type": "u8"
+          },
+          {
+            "name": "goldTierBonusXpPerMin",
+            "type": "u8"
+          },
+          {
+            "name": "silverTierBonusXpPerMin",
+            "type": "u8"
+          },
+          {
+            "name": "bronzeTierBonusXpPerMin",
+            "type": "u8"
+          },
+          {
+            "name": "ironTierBonusXpPerMin",
+            "type": "u8"
+          },
+          {
+            "name": "_paddingTierBonus",
+            "type": {
+              "array": [
+                "u8",
+                4
               ]
             }
           },

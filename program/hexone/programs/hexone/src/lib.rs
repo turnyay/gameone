@@ -9,7 +9,7 @@ pub use state::*;
 pub use constants::*;
 pub use instructions::*;
 
-declare_id!("D3sXMGZYUNN3DeQr2tUSKjgN8qYXcRHPCSSaJMAPUFzP");
+declare_id!("4hCMsw4pRN8VsyPg6USUEyEmnX5VTApEAWyEmMdrrtGj");
 
 #[program]
 pub mod hexone {
@@ -60,6 +60,3 @@ pub mod hexone {
         instructions::add_resources(ctx, tile_index, resources_to_add)
     }
 }
-
-
-
