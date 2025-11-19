@@ -58,6 +58,16 @@ export const UI: React.FC<UIProps> = ({
   game
 }) => {
   const [resourcesToAdd, setResourcesToAdd] = useState(availableResources);
+  const [refreshKey, setRefreshKey] = useState(0);
+  
+  // Force re-render every minute to update simulated XP display
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setRefreshKey(prev => prev + 1);
+    }, 60000); // Update every minute
+    
+    return () => clearInterval(timer);
+  }, []);
 
   // Update resourcesToAdd when availableResources changes
   useEffect(() => {
@@ -304,11 +314,37 @@ export const UI: React.FC<UIProps> = ({
         color: '#fff'
       }}>
         <div style={{ marginBottom: '30px' }}>
-          <h2 style={{ marginBottom: '20px' }}>Scoreboard</h2>
+          <h2 style={{ marginBottom: '0' }}>Scoreboard</h2>
+          {/* Column headers */}
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '10px',
+            padding: '4px 8px',
+            marginBottom: '4px',
+            fontFamily: 'monospace',
+            fontSize: '12px',
+            fontWeight: 'bold',
+            color: '#888',
+            borderBottom: '1px solid #333'
+          }}>
+            <div style={{ width: '16px' }} /> {/* Spacer for color square */}
+            <div style={{ flex: 1 }} /> {/* Spacer for player name */}
+            <div style={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              alignItems: 'flex-end',
+              minWidth: '80px',
+              gap: '2px'
+            }}>
+              <span>XP</span>
+            </div>
+            <span style={{ minWidth: '80px', textAlign: 'right' }}>Tiles</span>
+          </div>
           <div style={{ 
             display: 'flex', 
             flexDirection: 'column', 
-            gap: '10px',
+            gap: '6px',
             fontFamily: 'monospace',
             fontSize: '14px'
           }}>
@@ -318,10 +354,53 @@ export const UI: React.FC<UIProps> = ({
                 p => p && p.publicKey === currentWallet
               );
               
-              return [0, 1, 2, 3].map((playerIndex) => {
-                // Count tiles for this player from HexTile.players
+              // Get XP and tile count data from game
+              const gameData = game as any;
+              const savedXpValues = [
+                gameData?.xpPlayer1 || 0,
+                gameData?.xpPlayer2 || 0,
+                gameData?.xpPlayer3 || 0,
+                gameData?.xpPlayer4 || 0
+              ];
+              const xpTimestamps = [
+                gameData?.xpTimestampPlayer1 || 0,
+                gameData?.xpTimestampPlayer2 || 0,
+                gameData?.xpTimestampPlayer3 || 0,
+                gameData?.xpTimestampPlayer4 || 0
+              ];
+              const tileCounts = [
+                gameData?.tileCountColor1 || 0,
+                gameData?.tileCountColor2 || 0,
+                gameData?.tileCountColor3 || 0,
+                gameData?.tileCountColor4 || 0
+              ];
+              const xpPerMinutePerTile = gameData?.xpPerMinutePerTile || 1;
+              
+              // Calculate simulated XP for each player on-the-fly
+              const calculateSimulatedXP = (savedXP: number, timestamp: number, tileCount: number) => {
+                const currentTime = Math.floor(Date.now() / 1000);
+                const timeDiff = currentTime - timestamp;
+                if (timeDiff > 60) {
+                  const minutesElapsed = Math.floor(timeDiff / 60);
+                  const xpGained = minutesElapsed * xpPerMinutePerTile * tileCount;
+                  return savedXP + xpGained;
+                }
+                return savedXP;
+              };
+              
+              const simulatedXpValues = [
+                calculateSimulatedXP(savedXpValues[0], xpTimestamps[0], tileCounts[0]),
+                calculateSimulatedXP(savedXpValues[1], xpTimestamps[1], tileCounts[1]),
+                calculateSimulatedXP(savedXpValues[2], xpTimestamps[2], tileCounts[2]),
+                calculateSimulatedXP(savedXpValues[3], xpTimestamps[3], tileCounts[3])
+              ];
+              
+              // Create player data array with XP and tile counts
+              const playerData = [0, 1, 2, 3].map((playerIndex) => {
                 const player = HexTile.players[playerIndex];
-                const score = player ? player.tiles.size : 0;
+                const tileCount = tileCounts[playerIndex];
+                const savedXp = savedXpValues[playerIndex];
+                const simulatedXp = simulatedXpValues[playerIndex];
                 const color = PLAYER_COLORS[playerIndex];
                 const colorHex = `#${color.toString(16).padStart(6, '0')}`;
                 const playerNames = ['Red', 'Yellow', 'Green', 'Blue'];
@@ -332,77 +411,118 @@ export const UI: React.FC<UIProps> = ({
                 const isCurrentUser = currentWallet && playerPubkey && playerPubkey === currentWallet;
                 const isEmpty = !playerPubkey;
                 
+                return {
+                  playerIndex,
+                  tileCount,
+                  savedXp,
+                  simulatedXp,
+                  color,
+                  colorHex,
+                  playerName: playerNames[playerIndex],
+                  playerPubkey,
+                  isCurrentUser,
+                  isEmpty
+                };
+              });
+              
+              // Sort by simulated XP (highest first), then by tile count if XP is equal
+              const sortedPlayers = [...playerData].sort((a, b) => {
+                if (b.simulatedXp !== a.simulatedXp) {
+                  return b.simulatedXp - a.simulatedXp;
+                }
+                return b.tileCount - a.tileCount;
+              });
+              
+              return sortedPlayers.map((player) => {
                 return (
-                  <div key={playerIndex} style={{ 
+                  <div key={player.playerIndex} style={{ 
                     display: 'flex', 
                     alignItems: 'center', 
                     gap: '10px',
-                    padding: '8px',
+                    padding: '6px 8px',
                     backgroundColor: '#1a1a1a',
                     borderRadius: '4px'
                   }}>
                     <div style={{
                       width: '16px',
                       height: '16px',
-                      backgroundColor: colorHex,
+                      backgroundColor: player.colorHex,
                       borderRadius: '2px'
                     }} />
-                  <div style={{ 
-                    display: 'flex', 
-                    flexDirection: 'column',
-                    flex: 1,
-                    gap: '2px'
-                  }}>
                     <div style={{ 
                       display: 'flex', 
-                      alignItems: 'center', 
-                      gap: '8px' 
+                      flexDirection: 'column',
+                      flex: 1,
+                      gap: '2px'
                     }}>
-                      <span style={{ color: '#888', fontSize: '12px' }}>{playerNames[playerIndex]}</span>
-                      {isCurrentUser && (
-                        <button
-                          style={{
-                            backgroundColor: '#f97316',
-                            color: '#ffffff',
-                            border: 'none',
-                            borderRadius: '4px',
-                            padding: '4px 12px',
-                            fontSize: '12px',
-                            fontWeight: 'bold',
-                            cursor: 'default'
-                          }}
-                        >
-                          YOU
-                        </button>
-                      )}
-                      {isEmpty && currentWallet && onJoinGame && !isUserInGame && (
-                        <button
-                          onClick={onJoinGame}
-                          disabled={joiningGame}
-                          style={{
-                            backgroundColor: '#f97316',
-                            color: '#ffffff',
-                            border: 'none',
-                            borderRadius: '4px',
-                            padding: '4px 12px',
-                            fontSize: '12px',
-                            fontWeight: 'bold',
-                            cursor: joiningGame ? 'not-allowed' : 'pointer',
-                            opacity: joiningGame ? 0.6 : 1,
-                            transition: 'opacity 0.2s ease'
-                          }}
-                        >
-                          {joiningGame ? 'JOINING...' : 'JOIN'}
-                        </button>
+                      <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '8px' 
+                      }}>
+                        <span style={{ color: '#888', fontSize: '12px' }}>{player.playerName}</span>
+                        {player.isCurrentUser && (
+                          <button
+                            style={{
+                              backgroundColor: '#f97316',
+                              color: '#ffffff',
+                              border: 'none',
+                              borderRadius: '4px',
+                              padding: '4px 12px',
+                              fontSize: '12px',
+                              fontWeight: 'bold',
+                              cursor: 'default'
+                            }}
+                          >
+                            YOU
+                          </button>
+                        )}
+                        {player.isEmpty && currentWallet && onJoinGame && !isUserInGame && (
+                          <button
+                            onClick={onJoinGame}
+                            disabled={joiningGame}
+                            style={{
+                              backgroundColor: '#f97316',
+                              color: '#ffffff',
+                              border: 'none',
+                              borderRadius: '4px',
+                              padding: '4px 12px',
+                              fontSize: '12px',
+                              fontWeight: 'bold',
+                              cursor: joiningGame ? 'not-allowed' : 'pointer',
+                              opacity: joiningGame ? 0.6 : 1,
+                              transition: 'opacity 0.2s ease'
+                            }}
+                          >
+                            {joiningGame ? 'JOINING...' : 'JOIN'}
+                          </button>
+                        )}
+                      </div>
+                      {player.playerPubkey && (
+                        <span style={{ color: '#666', fontSize: '10px', fontFamily: 'monospace' }}>
+                          {shortenPubkey(player.playerPubkey)}
+                        </span>
                       )}
                     </div>
-                    {playerPubkey && (
-                      <span style={{ color: '#666', fontSize: '10px', fontFamily: 'monospace' }}>
-                        {shortenPubkey(playerPubkey)}
+                    <div style={{ 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      alignItems: 'flex-end',
+                      minWidth: '80px',
+                      gap: '2px'
+                    }}>
+                      <span style={{ color: '#00ff00', fontWeight: 'bold', fontSize: '14px' }}>
+                        {player.simulatedXp}
                       </span>
-                    )}
-                  </div>
-                  <span style={{ color: '#ffa500' }}>{score}</span>
+                      {player.simulatedXp > player.savedXp && (
+                        <span style={{ color: '#888', fontSize: '10px' }}>
+                          ({player.savedXp} + {player.simulatedXp - player.savedXp})
+                        </span>
+                      )}
+                    </div>
+                    <span style={{ color: '#ffa500', minWidth: '80px', textAlign: 'right' }}>
+                      {player.tileCount}
+                    </span>
                   </div>
                 );
               });

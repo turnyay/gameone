@@ -121,6 +121,7 @@ const Game: React.FC = () => {
     return () => clearInterval(timer);
   }, [game, wallet.publicKey]);
 
+
   useEffect(() => {
     const timer = setInterval(() => {
       setCountdownSeconds(prev => {
@@ -144,6 +145,37 @@ const Game: React.FC = () => {
   const handleAddResources = async (amount: number) => {
     if (!HexTile.selectedTile || availableResources === 0 || !client || !wallet.publicKey || !game || amount <= 0 || amount > availableResources) {
       return;
+    }
+
+    // Get the actual on-chain values to validate before sending
+    // The on-chain will update total_resources_available when the transaction runs
+    const gameData = game as any;
+    const totalResourcesAvailable = gameData.totalResourcesAvailable || 0;
+    let playerResourcesSpent = 0;
+    if (gameData.gamePlayers && wallet.publicKey) {
+      const walletPubkeyStr = wallet.publicKey.toString();
+      const currentPlayer = gameData.gamePlayers.find((p: any) => p && p.publicKey === walletPubkeyStr);
+      if (currentPlayer) {
+        const playerIndex = currentPlayer.colorIndex;
+        if (playerIndex === 0) playerResourcesSpent = gameData.resourcesSpentPlayer1 || 0;
+        else if (playerIndex === 1) playerResourcesSpent = gameData.resourcesSpentPlayer2 || 0;
+        else if (playerIndex === 2) playerResourcesSpent = gameData.resourcesSpentPlayer3 || 0;
+        else if (playerIndex === 3) playerResourcesSpent = gameData.resourcesSpentPlayer4 || 0;
+      }
+    }
+    const actualAvailableOnChain = Math.max(0, totalResourcesAvailable - playerResourcesSpent);
+    
+    // Warn if simulated value differs significantly from on-chain
+    // The on-chain value will be updated when transaction executes
+    if (amount > actualAvailableOnChain) {
+      console.warn('Resource mismatch - simulated vs on-chain:', {
+        amount,
+        actualAvailableOnChain,
+        totalResourcesAvailable,
+        playerResourcesSpent,
+        simulatedAvailable: availableResources,
+        note: 'On-chain will update when transaction executes, but current on-chain value is lower'
+      });
     }
 
     try {
@@ -219,30 +251,53 @@ const Game: React.FC = () => {
       // Read available_resources_timestamp (i64, 8 bytes)
       const availableResourcesTimestamp = Number(data.readBigInt64LE(168));
       
+      // Read xp_timestamp_player1-4 (i64 each, 8 bytes each)
+      const xpTimestampPlayer1 = Number(data.readBigInt64LE(176));
+      const xpTimestampPlayer2 = Number(data.readBigInt64LE(184));
+      const xpTimestampPlayer3 = Number(data.readBigInt64LE(192));
+      const xpTimestampPlayer4 = Number(data.readBigInt64LE(200));
+      
       // Read resources_per_minute (u32, 4 bytes)
-      const resourcesPerMinute = data.readUInt32LE(176);
+      const resourcesPerMinute = data.readUInt32LE(208);
       
       // Read total_resources_available (u32, 4 bytes)
-      const totalResourcesAvailable = data.readUInt32LE(180);
+      const totalResourcesAvailable = data.readUInt32LE(212);
       
       // Read resources_spent_player1-4 (u32 each, 4 bytes each)
-      const resourcesSpentPlayer1 = data.readUInt32LE(184);
-      const resourcesSpentPlayer2 = data.readUInt32LE(188);
-      const resourcesSpentPlayer3 = data.readUInt32LE(192);
-      const resourcesSpentPlayer4 = data.readUInt32LE(196);
+      const resourcesSpentPlayer1 = data.readUInt32LE(216);
+      const resourcesSpentPlayer2 = data.readUInt32LE(220);
+      const resourcesSpentPlayer3 = data.readUInt32LE(224);
+      const resourcesSpentPlayer4 = data.readUInt32LE(228);
       
-      // Read tile_data (144 * 4 bytes) - starts at offset 200
+      // Read xp_per_minute_per_tile (u32, 4 bytes)
+      const xpPerMinutePerTile = data.readUInt32LE(232);
+      
+      // Read xp_player1-4 (u32 each, 4 bytes each)
+      const xpPlayer1 = data.readUInt32LE(236);
+      const xpPlayer2 = data.readUInt32LE(240);
+      const xpPlayer3 = data.readUInt32LE(244);
+      const xpPlayer4 = data.readUInt32LE(248);
+      
+      // Read tile_count_color1-4 (u32 each, 4 bytes each)
+      const tileCountColor1 = data.readUInt32LE(252);
+      const tileCountColor2 = data.readUInt32LE(256);
+      const tileCountColor3 = data.readUInt32LE(260);
+      const tileCountColor4 = data.readUInt32LE(264);
+      
+      // Skip _padding_u32 (4 bytes)
+      
+      // Read tile_data (144 * 4 bytes) - starts at offset 272
       // Each TileData is: color (u8) + _pad (u8) + resource_count (u16) = 4 bytes
       const tileData: Array<{ color: number; resourceCount: number }> = [];
       for (let i = 0; i < 144; i++) {
-          const offset = 200 + (i * 4);
+          const offset = 272 + (i * 4);
           const color = data.readUInt8(offset);
           const resourceCount = data.readUInt16LE(offset + 2);
           tileData.push({ color, resourceCount });
       }
       
       // Read game state and other fields (5 bytes)
-      const gameStateOffset = 200 + (144 * 4);
+      const gameStateOffset = 272 + (144 * 4);
       const gameState = data.readUInt8(gameStateOffset);
       const rows = data.readUInt8(gameStateOffset + 1);
       const columns = data.readUInt8(gameStateOffset + 2);
@@ -298,13 +353,49 @@ const Game: React.FC = () => {
       (gameData as any).resourcesSpentPlayer3 = resourcesSpentPlayer3;
       (gameData as any).resourcesSpentPlayer4 = resourcesSpentPlayer4;
       (gameData as any).availableResourcesTimestamp = availableResourcesTimestamp;
+      
+      // Store XP data
+      (gameData as any).xpPlayer1 = xpPlayer1;
+      (gameData as any).xpPlayer2 = xpPlayer2;
+      (gameData as any).xpPlayer3 = xpPlayer3;
+      (gameData as any).xpPlayer4 = xpPlayer4;
+      (gameData as any).xpTimestampPlayer1 = xpTimestampPlayer1;
+      (gameData as any).xpTimestampPlayer2 = xpTimestampPlayer2;
+      (gameData as any).xpTimestampPlayer3 = xpTimestampPlayer3;
+      (gameData as any).xpTimestampPlayer4 = xpTimestampPlayer4;
+      (gameData as any).xpPerMinutePerTile = xpPerMinutePerTile;
+      (gameData as any).tileCountColor1 = tileCountColor1;
+      (gameData as any).tileCountColor2 = tileCountColor2;
+      (gameData as any).tileCountColor3 = tileCountColor3;
+      (gameData as any).tileCountColor4 = tileCountColor4;
+      
+      // Calculate simulated XP for each player
+      const calculateSimulatedXP = (savedXP: number, timestamp: number, tileCount: number) => {
+        const currentTime = Math.floor(Date.now() / 1000); // Current time in seconds
+        const timeDiff = currentTime - timestamp;
+        if (timeDiff > 60) {
+          const minutesElapsed = Math.floor(timeDiff / 60);
+          const xpGained = minutesElapsed * xpPerMinutePerTile * tileCount;
+          return savedXP + xpGained;
+        }
+        return savedXP;
+      };
+      
+      (gameData as any).simulatedXpPlayer1 = calculateSimulatedXP(xpPlayer1, xpTimestampPlayer1, tileCountColor1);
+      (gameData as any).simulatedXpPlayer2 = calculateSimulatedXP(xpPlayer2, xpTimestampPlayer2, tileCountColor2);
+      (gameData as any).simulatedXpPlayer3 = calculateSimulatedXP(xpPlayer3, xpTimestampPlayer3, tileCountColor3);
+      (gameData as any).simulatedXpPlayer4 = calculateSimulatedXP(xpPlayer4, xpTimestampPlayer4, tileCountColor4);
 
       // Calculate simulated total resources based on timestamp
+      // Note: On-chain only updates when add_resources is called, so we simulate
+      // the same way - only add resources if more than 60 seconds have passed
       const calculateSimulatedTotal = () => {
         const currentTime = Math.floor(Date.now() / 1000); // Current time in seconds
         const timeDiff = currentTime - availableResourcesTimestamp;
         if (timeDiff > 60) {
+          // Calculate the same way as on-chain: only full minutes elapsed
           const minutesElapsed = Math.floor(timeDiff / 60);
+          // Only add resources for full minutes, matching on-chain behavior
           return totalResourcesAvailable + (minutesElapsed * resourcesPerMinute);
         }
         return totalResourcesAvailable;
@@ -312,6 +403,17 @@ const Game: React.FC = () => {
 
       const simulatedTotal = calculateSimulatedTotal();
       setSimulatedTotalResources(simulatedTotal);
+      
+      // Log for debugging
+      console.log('Resource calculation:', {
+        totalResourcesAvailable,
+        availableResourcesTimestamp,
+        currentTime: Math.floor(Date.now() / 1000),
+        timeDiff: Math.floor(Date.now() / 1000) - availableResourcesTimestamp,
+        minutesElapsed: Math.floor((Math.floor(Date.now() / 1000) - availableResourcesTimestamp) / 60),
+        simulatedTotal,
+        resourcesPerMinute
+      });
 
       // Calculate available resources for current player
       let playerResourcesSpent = 0;
@@ -999,6 +1101,31 @@ const Game: React.FC = () => {
               // Wait for transaction confirmation
               await connection.confirmTransaction(tx);
 
+              // Parse transaction logs to get the attack result
+              let attackerWon: boolean | null = null;
+              try {
+                const transaction = await connection.getTransaction(tx, {
+                  commitment: 'confirmed',
+                  maxSupportedTransactionVersion: 0,
+                });
+
+                if (transaction?.meta?.logMessages) {
+                  // Look for log messages that indicate who won
+                  for (const log of transaction.meta.logMessages) {
+                    if (log.includes('Attacker') && log.includes('won against')) {
+                      attackerWon = true;
+                      break;
+                    } else if (log.includes('Attacker') && log.includes('lost against')) {
+                      attackerWon = false;
+                      break;
+                    }
+                  }
+                }
+              } catch (logError) {
+                console.warn('Could not parse transaction logs, falling back to game state comparison:', logError);
+                // Fallback to game state comparison if log parsing fails
+              }
+
               // Fetch updated game data to get new resource counts
               await fetchGame();
 
@@ -1009,24 +1136,24 @@ const Game: React.FC = () => {
                 const newDefenderResources = updatedGame.tileData[attackData.defenderTileIndex]?.resourceCount || 0;
                 const newDefenderColor = updatedGame.tileData[attackData.defenderTileIndex]?.color || 0;
                 
-                // Determine winner based on game state changes:
+                // If we couldn't parse logs, determine winner based on game state changes:
                 // 1. If defender tile color changed to attacker's color, attacker won
                 // 2. If defender resources decreased, attacker won
                 // 3. Otherwise, defender won (attacker resources decreased)
-                let attackerWon = false;
-                const attackerColorValue = attackData.attackerColor + 1; // Convert 0-3 to 1-4
-                if (newDefenderColor === attackerColorValue && newDefenderColor !== (attackData.defenderColor + 1)) {
-                  // Defender tile was taken by attacker
-                  attackerWon = true;
-                } else if (newDefenderResources < attackData.defenderResources) {
-                  // Defender lost resources
-                  attackerWon = true;
-                } else if (newAttackerResources < attackData.attackerResources) {
-                  // Attacker lost resources
-                  attackerWon = false;
-                } else {
-                  // Default: check if defender resources decreased (shouldn't happen, but fallback)
-                  attackerWon = newDefenderResources < attackData.defenderResources;
+                if (attackerWon === null) {
+                  if (newDefenderColor === (attackData.attackerColor + 1) && newDefenderColor !== (attackData.defenderColor + 1)) {
+                    // Defender tile was taken by attacker
+                    attackerWon = true;
+                  } else if (newDefenderResources < attackData.defenderResources) {
+                    // Defender lost resources
+                    attackerWon = true;
+                  } else if (newAttackerResources < attackData.attackerResources) {
+                    // Attacker lost resources
+                    attackerWon = false;
+                  } else {
+                    // Default fallback
+                    attackerWon = false;
+                  }
                 }
 
                 setAttackResolved(true);

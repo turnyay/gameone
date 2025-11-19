@@ -167,40 +167,103 @@ export class MainScene extends Phaser.Scene {
     const centerCol = 6;
     const centerRow = 5;
     
-    // Apply gold border to center tile
+    // Apply gold border to center tile (ring 0)
     if (this.tiles[centerRow] && this.tiles[centerRow][centerCol]) {
       this.tiles[centerRow][centerCol].setGoldBorder();
     }
 
-    // Calculate 6 neighbors of center tile
-    // Since col 6 is even, use even column neighbor offsets
-    const neighborOffsets = [
-      { dx: 1, dy: 0 },   // right
-      { dx: 1, dy: -1 },  // top-right
-      { dx: 0, dy: -1 },  // top
-      { dx: -1, dy: -1 }, // top-left
-      { dx: -1, dy: 0 },  // left
-      { dx: 0, dy: 1 }    // bottom
-    ];
+    // Get all tiles at specific ring distances
+    const silverTiles = this.getTilesAtRing(centerRow, centerCol, 1); // Ring 1: 6 tiles
+    const bronzeTiles = this.getTilesAtRing(centerRow, centerCol, 2); // Ring 2: 12 tiles
+    const ironTiles = this.getTilesAtRing(centerRow, centerCol, 3);   // Ring 3: 18 tiles
 
-    // Apply silver borders to the 6 neighbors
+    // Apply silver borders (ring 1)
+    silverTiles.forEach(tile => tile.setSilverBorder());
+
+    // Apply bronze borders (ring 2)
+    bronzeTiles.forEach(tile => tile.setBronzeBorder());
+
+    // Apply iron borders (ring 3)
+    ironTiles.forEach(tile => tile.setIronBorder());
+  }
+
+  private getTilesAtRing(centerRow: number, centerCol: number, ringDistance: number): HexTile[] {
+    const tiles: HexTile[] = [];
+    const visited = new Set<string>();
+    
+    // Use BFS to find all tiles at the specified ring distance
+    const queue: Array<{ row: number; col: number; distance: number }> = [];
+    queue.push({ row: centerRow, col: centerCol, distance: 0 });
+    visited.add(`${centerRow},${centerCol}`);
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      
+      if (current.distance === ringDistance) {
+        // Found a tile at the target ring distance
+        if (this.tiles[current.row] && this.tiles[current.row][current.col]) {
+          // Skip if it's the last row and an odd column (gap tile)
+          if (!(current.row === this.gridSizeRows - 1 && current.col % 2 === 1)) {
+            tiles.push(this.tiles[current.row][current.col]);
+          }
+        }
+        continue; // Don't explore neighbors of tiles at target distance
+      }
+
+      if (current.distance < ringDistance) {
+        // Get neighbors and continue BFS
+        const neighbors = this.getNeighbors(current.row, current.col);
+        for (const neighbor of neighbors) {
+          const key = `${neighbor.row},${neighbor.col}`;
+          if (!visited.has(key)) {
+            visited.add(key);
+            queue.push({ row: neighbor.row, col: neighbor.col, distance: current.distance + 1 });
+          }
+        }
+      }
+    }
+
+    return tiles;
+  }
+
+  private getNeighbors(row: number, col: number): Array<{ row: number; col: number }> {
+    const neighbors: Array<{ row: number; col: number }> = [];
+    const isOddColumn = col % 2 === 1;
+
+    // For odd-r offset hexagonal grid
+    const neighborOffsets = isOddColumn
+      ? [
+          { dx: 1, dy: 1 },   // bottom-right
+          { dx: 1, dy: 0 },   // right
+          { dx: 0, dy: -1 },  // top
+          { dx: -1, dy: 0 },  // left
+          { dx: -1, dy: 1 },  // bottom-left
+          { dx: 0, dy: 1 }    // bottom
+        ]
+      : [
+          { dx: 1, dy: 0 },   // right
+          { dx: 1, dy: -1 },  // top-right
+          { dx: 0, dy: -1 },  // top
+          { dx: -1, dy: -1 }, // top-left
+          { dx: -1, dy: 0 },  // left
+          { dx: 0, dy: 1 }    // bottom
+        ];
+
     for (const offset of neighborOffsets) {
-      const neighborCol = centerCol + offset.dx;
-      const neighborRow = centerRow + offset.dy;
+      const neighborRow = row + offset.dy;
+      const neighborCol = col + offset.dx;
       
       // Check bounds
       if (neighborRow >= 0 && neighborRow < this.gridSizeRows &&
           neighborCol >= 0 && neighborCol < this.gridSizeColumns) {
         // Skip if it's the last row and an odd column (gap tile)
-        if (neighborRow === this.gridSizeRows - 1 && neighborCol % 2 === 1) {
-          continue;
-        }
-        
-        if (this.tiles[neighborRow] && this.tiles[neighborRow][neighborCol]) {
-          this.tiles[neighborRow][neighborCol].setSilverBorder();
+        if (!(neighborRow === this.gridSizeRows - 1 && neighborCol % 2 === 1)) {
+          neighbors.push({ row: neighborRow, col: neighborCol });
         }
       }
     }
+
+    return neighbors;
   }
 
   update() {

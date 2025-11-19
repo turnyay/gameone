@@ -24,6 +24,100 @@ fn calculate_new_resources(
     }
 }
 
+/// Calculate new XP based on time elapsed
+/// Returns the XP to add: minutes * xp_per_minute_per_tile * number_of_tiles
+fn calculate_new_xp(
+    current_time: i64,
+    last_timestamp: i64,
+    xp_per_minute_per_tile: u32,
+    number_of_tiles: u32,
+) -> u32 {
+    let time_diff_seconds = current_time - last_timestamp;
+    
+    // Only calculate if more than 1 minute (60 seconds) has passed
+    if time_diff_seconds > 60 {
+        let minutes_elapsed = (time_diff_seconds / 60) as u32;
+        // Calculate XP: minutes * xp_per_minute_per_tile * number_of_tiles
+        minutes_elapsed
+            .checked_mul(xp_per_minute_per_tile)
+            .and_then(|x| x.checked_mul(number_of_tiles))
+            .unwrap_or(u32::MAX)
+    } else {
+        0
+    }
+}
+
+/// Update XP for all players based on time elapsed
+fn update_all_players_xp(game: &mut Game, current_time: i64) -> Result<()> {
+    let xp_per_minute_per_tile = game.xp_per_minute_per_tile;
+    
+    // Update player 1 XP
+    if current_time - game.xp_timestamp_player1 > 60 {
+        let calculated_xp = calculate_new_xp(
+            current_time,
+            game.xp_timestamp_player1,
+            xp_per_minute_per_tile,
+            game.tile_count_color1,
+        );
+        game.xp_player1 = game.xp_player1
+            .checked_add(calculated_xp)
+            .ok_or(HexoneError::Invalid)?;
+        let time_diff = current_time - game.xp_timestamp_player1;
+        let minutes_elapsed = time_diff / 60;
+        game.xp_timestamp_player1 = game.xp_timestamp_player1 + (minutes_elapsed * 60);
+    }
+    
+    // Update player 2 XP
+    if current_time - game.xp_timestamp_player2 > 60 {
+        let calculated_xp = calculate_new_xp(
+            current_time,
+            game.xp_timestamp_player2,
+            xp_per_minute_per_tile,
+            game.tile_count_color2,
+        );
+        game.xp_player2 = game.xp_player2
+            .checked_add(calculated_xp)
+            .ok_or(HexoneError::Invalid)?;
+        let time_diff = current_time - game.xp_timestamp_player2;
+        let minutes_elapsed = time_diff / 60;
+        game.xp_timestamp_player2 = game.xp_timestamp_player2 + (minutes_elapsed * 60);
+    }
+    
+    // Update player 3 XP
+    if current_time - game.xp_timestamp_player3 > 60 {
+        let calculated_xp = calculate_new_xp(
+            current_time,
+            game.xp_timestamp_player3,
+            xp_per_minute_per_tile,
+            game.tile_count_color3,
+        );
+        game.xp_player3 = game.xp_player3
+            .checked_add(calculated_xp)
+            .ok_or(HexoneError::Invalid)?;
+        let time_diff = current_time - game.xp_timestamp_player3;
+        let minutes_elapsed = time_diff / 60;
+        game.xp_timestamp_player3 = game.xp_timestamp_player3 + (minutes_elapsed * 60);
+    }
+    
+    // Update player 4 XP
+    if current_time - game.xp_timestamp_player4 > 60 {
+        let calculated_xp = calculate_new_xp(
+            current_time,
+            game.xp_timestamp_player4,
+            xp_per_minute_per_tile,
+            game.tile_count_color4,
+        );
+        game.xp_player4 = game.xp_player4
+            .checked_add(calculated_xp)
+            .ok_or(HexoneError::Invalid)?;
+        let time_diff = current_time - game.xp_timestamp_player4;
+        let minutes_elapsed = time_diff / 60;
+        game.xp_timestamp_player4 = game.xp_timestamp_player4 + (minutes_elapsed * 60);
+    }
+    
+    Ok(())
+}
+
 #[derive(Accounts)]
 pub struct AddResources<'info> {
     #[account(mut)]
@@ -115,7 +209,7 @@ pub fn add_resources(
     };
 
     // Check that player's total spent (current + new) doesn't exceed total available
-    // total_resources_available only goes up, never down
+    // total_resources_available is per player (each player gets the same allocation)
     let total_spent_after = current_spent
         .checked_add(resources_to_add)
         .ok_or(HexoneError::Invalid)?;
@@ -147,6 +241,9 @@ pub fn add_resources(
     game.tile_data[tile_index as usize].resource_count = current_tile_resources
         .checked_add(resources_to_add as u16)
         .ok_or(HexoneError::Invalid)?;
+
+    // Update XP for all players
+    update_all_players_xp(game, current_time)?;
 
     Ok(())
 }

@@ -287,8 +287,90 @@ export const IDL: Idl = {
             "type": "u64"
           },
           {
+            "name": "availableResourcesTimestamp",
+            "type": "i64"
+          },
+          {
+            "name": "xpTimestampPlayer1",
+            "type": "i64"
+          },
+          {
+            "name": "xpTimestampPlayer2",
+            "type": "i64"
+          },
+          {
+            "name": "xpTimestampPlayer3",
+            "type": "i64"
+          },
+          {
+            "name": "xpTimestampPlayer4",
+            "type": "i64"
+          },
+          {
             "name": "resourcesPerMinute",
             "type": "u32"
+          },
+          {
+            "name": "totalResourcesAvailable",
+            "type": "u32"
+          },
+          {
+            "name": "resourcesSpentPlayer1",
+            "type": "u32"
+          },
+          {
+            "name": "resourcesSpentPlayer2",
+            "type": "u32"
+          },
+          {
+            "name": "resourcesSpentPlayer3",
+            "type": "u32"
+          },
+          {
+            "name": "resourcesSpentPlayer4",
+            "type": "u32"
+          },
+          {
+            "name": "xpPerMinutePerTile",
+            "type": "u32"
+          },
+          {
+            "name": "xpPlayer1",
+            "type": "u32"
+          },
+          {
+            "name": "xpPlayer2",
+            "type": "u32"
+          },
+          {
+            "name": "xpPlayer3",
+            "type": "u32"
+          },
+          {
+            "name": "xpPlayer4",
+            "type": "u32"
+          },
+          {
+            "name": "tileCountColor1",
+            "type": "u32"
+          },
+          {
+            "name": "tileCountColor2",
+            "type": "u32"
+          },
+          {
+            "name": "tileCountColor3",
+            "type": "u32"
+          },
+          {
+            "name": "tileCountColor4",
+            "type": "u32"
+          },
+          {
+            "name": "_paddingU32",
+            "type": {
+              "array": ["u8", 4]
+            }
           },
           {
             "name": "tileData",
@@ -512,8 +594,94 @@ export const IDL: Idl = {
             "type": "publicKey"
           },
           {
+            "name": "gameId",
+            "type": "u64"
+          },
+          {
+            "name": "availableResourcesTimestamp",
+            "type": "i64"
+          },
+          {
+            "name": "xpTimestampPlayer1",
+            "type": "i64"
+          },
+          {
+            "name": "xpTimestampPlayer2",
+            "type": "i64"
+          },
+          {
+            "name": "xpTimestampPlayer3",
+            "type": "i64"
+          },
+          {
+            "name": "xpTimestampPlayer4",
+            "type": "i64"
+          },
+          {
             "name": "resourcesPerMinute",
             "type": "u32"
+          },
+          {
+            "name": "totalResourcesAvailable",
+            "type": "u32"
+          },
+          {
+            "name": "resourcesSpentPlayer1",
+            "type": "u32"
+          },
+          {
+            "name": "resourcesSpentPlayer2",
+            "type": "u32"
+          },
+          {
+            "name": "resourcesSpentPlayer3",
+            "type": "u32"
+          },
+          {
+            "name": "resourcesSpentPlayer4",
+            "type": "u32"
+          },
+          {
+            "name": "xpPerMinutePerTile",
+            "type": "u32"
+          },
+          {
+            "name": "xpPlayer1",
+            "type": "u32"
+          },
+          {
+            "name": "xpPlayer2",
+            "type": "u32"
+          },
+          {
+            "name": "xpPlayer3",
+            "type": "u32"
+          },
+          {
+            "name": "xpPlayer4",
+            "type": "u32"
+          },
+          {
+            "name": "tileCountColor1",
+            "type": "u32"
+          },
+          {
+            "name": "tileCountColor2",
+            "type": "u32"
+          },
+          {
+            "name": "tileCountColor3",
+            "type": "u32"
+          },
+          {
+            "name": "tileCountColor4",
+            "type": "u32"
+          },
+          {
+            "name": "_paddingU32",
+            "type": {
+              "array": ["u8", 4]
+            }
           },
           {
             "name": "tileData",
@@ -976,10 +1144,146 @@ export class HexoneClient {
     }
   }
 
+  private fetchGameManually(gamePubkey: PublicKey, accountData: Buffer): GameAccount | null {
+    try {
+      // Skip 8 bytes for Anchor discriminator
+      const data = Buffer.from(accountData.slice(8));
+      
+      // Read pubkeys (32 bytes each)
+      const admin = new PublicKey(data.slice(0, 32));
+      const player1 = new PublicKey(data.slice(32, 64));
+      const player2 = new PublicKey(data.slice(64, 96));
+      const player3 = new PublicKey(data.slice(96, 128));
+      const player4 = new PublicKey(data.slice(128, 160));
+      
+      // Read game_id (8 bytes)
+      const gameIdValue = data.readBigUInt64LE(160);
+      
+      // Read available_resources_timestamp (i64, 8 bytes)
+      const availableResourcesTimestamp = Number(data.readBigInt64LE(168));
+      
+      // Read xp_timestamp_player1-4 (i64 each, 8 bytes each)
+      const xpTimestampPlayer1 = Number(data.readBigInt64LE(176));
+      const xpTimestampPlayer2 = Number(data.readBigInt64LE(184));
+      const xpTimestampPlayer3 = Number(data.readBigInt64LE(192));
+      const xpTimestampPlayer4 = Number(data.readBigInt64LE(200));
+      
+      // Read resources_per_minute (u32, 4 bytes)
+      const resourcesPerMinute = data.readUInt32LE(208);
+      
+      // Read total_resources_available (u32, 4 bytes)
+      const totalResourcesAvailable = data.readUInt32LE(212);
+      
+      // Read resources_spent_player1-4 (u32 each, 4 bytes each)
+      const resourcesSpentPlayer1 = data.readUInt32LE(216);
+      const resourcesSpentPlayer2 = data.readUInt32LE(220);
+      const resourcesSpentPlayer3 = data.readUInt32LE(224);
+      const resourcesSpentPlayer4 = data.readUInt32LE(228);
+      
+      // Read xp_per_minute_per_tile (u32, 4 bytes)
+      const xpPerMinutePerTile = data.readUInt32LE(232);
+      
+      // Read xp_player1-4 (u32 each, 4 bytes each)
+      const xpPlayer1 = data.readUInt32LE(236);
+      const xpPlayer2 = data.readUInt32LE(240);
+      const xpPlayer3 = data.readUInt32LE(244);
+      const xpPlayer4 = data.readUInt32LE(248);
+      
+      // Read tile_count_color1-4 (u32 each, 4 bytes each)
+      const tileCountColor1 = data.readUInt32LE(252);
+      const tileCountColor2 = data.readUInt32LE(256);
+      const tileCountColor3 = data.readUInt32LE(260);
+      const tileCountColor4 = data.readUInt32LE(264);
+      
+      // Read tile_data (144 * 4 bytes) - starts at offset 272 (after 4 bytes padding)
+      const tileData: TileData[] = [];
+      const tileDataStartOffset = 272;
+      const maxTiles = Math.min(144, Math.floor((data.length - tileDataStartOffset) / 4));
+      
+      for (let i = 0; i < maxTiles; i++) {
+        const offset = tileDataStartOffset + (i * 4);
+        if (offset + 4 <= data.length) {
+          const color = data.readUInt8(offset);
+          const resourceCount = data.readUInt16LE(offset + 2);
+          tileData.push({ color, resourceCount });
+        } else {
+          tileData.push({ color: 0, resourceCount: 0 });
+        }
+      }
+      
+      // Fill remaining tiles if needed
+      while (tileData.length < 144) {
+        tileData.push({ color: 0, resourceCount: 0 });
+      }
+      
+      // Read game state and other fields (5 bytes)
+      const gameStateOffset = tileDataStartOffset + (144 * 4);
+      let gameState = 0;
+      let rows = 11;
+      let columns = 13;
+      
+      if (gameStateOffset < data.length) {
+        gameState = data.readUInt8(gameStateOffset);
+      }
+      if (gameStateOffset + 1 < data.length) {
+        rows = data.readUInt8(gameStateOffset + 1);
+      }
+      if (gameStateOffset + 2 < data.length) {
+        columns = data.readUInt8(gameStateOffset + 2);
+      }
+      
+      const tilesCovered = tileData.filter(tile => tile.color !== 0).length;
+      const totalTiles = rows * columns || 144;
+      const tilesCoveredPercent = totalTiles > 0 ? (tilesCovered / totalTiles) * 100 : 0;
+      
+      return {
+        publicKey: gamePubkey,
+        status: this.getGameStatus(gameState),
+        players: [player1, player2, player3, player4].filter(pk => !pk.equals(PublicKey.default)),
+        tilesCovered,
+        totalTiles,
+        tilesCoveredPercent,
+        cost: 0,
+        tileData,
+        rows,
+        columns,
+        resourcesPerMinute
+      };
+    } catch (error) {
+      console.error('Error in manual game parsing:', error);
+      return null;
+    }
+  }
+
   async fetchGame(gameId: string): Promise<GameAccount | null> {
     try {
-      const game = await this.program.account.game.fetch(new PublicKey(gameId));
-      const account = game as any;
+      // First check account info to see actual data size
+      const gamePubkey = new PublicKey(gameId);
+      const accountInfo = await this.connection.getAccountInfo(gamePubkey);
+      if (!accountInfo) {
+        console.error('Game account not found');
+        return null;
+      }
+      
+      const expectedSize = 8 + 32*5 + 8*6 + 4*16 + 4 + 144*4 + 5 + 3; // 868
+      const actualSize = accountInfo.data.length;
+      
+      console.log('Game account data length:', actualSize);
+      console.log('Expected size (with discriminator):', expectedSize);
+      
+      // Try to fetch using Anchor, with fallback to manual parsing
+      let account: any;
+      try {
+        const game = await this.program.account.game.fetch(gamePubkey);
+        account = game as any;
+      } catch (fetchError: any) {
+        console.warn('Failed to fetch game using Anchor deserialization, falling back to manual parsing:', fetchError?.message || fetchError);
+        // Fallback to manual parsing if Anchor deserialization fails
+        if (actualSize < expectedSize) {
+          console.error(`Account size mismatch! Expected ${expectedSize} bytes, got ${actualSize} bytes.`);
+        }
+        return this.fetchGameManually(gamePubkey, accountInfo.data);
+      }
       
       // Parse tile data if available
       const tileData: TileData[] = [];
@@ -1227,8 +1531,14 @@ export class HexoneClient {
 
       // Check if account exists first
       const accountInfo = await this.connection.getAccountInfo(defenderPda);
-      if (!accountInfo) {
-        console.log('Defender account does not exist');
+      if (!accountInfo || !accountInfo.data) {
+        console.log('Defender account does not exist or has no data');
+        return null;
+      }
+
+      // Check if account data is large enough to be valid
+      if (accountInfo.data.length < 8) {
+        console.log('Defender account data is too small or corrupted');
         return null;
       }
 
@@ -1241,8 +1551,13 @@ export class HexoneClient {
       });
       return defender;
     } catch (error: any) {
-      // Account doesn't exist or error fetching
-      console.log('Error fetching defender account:', error?.message || error);
+      // Account doesn't exist, is closed, or error fetching/deserializing
+      const errorMessage = error?.message || String(error);
+      if (errorMessage.includes('buffer') || errorMessage.includes('length') || errorMessage.includes('beyond')) {
+        console.log('Defender account data is invalid or account was closed:', errorMessage);
+      } else {
+        console.log('Error fetching defender account:', errorMessage);
+      }
       return null;
     }
   }

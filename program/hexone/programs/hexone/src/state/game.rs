@@ -19,6 +19,10 @@ pub struct Game {
     // 8-byte aligned fields
     pub game_id: u64,
     pub available_resources_timestamp: i64,
+    pub xp_timestamp_player1: i64,
+    pub xp_timestamp_player2: i64,
+    pub xp_timestamp_player3: i64,
+    pub xp_timestamp_player4: i64,
     // 4-byte aligned fields
     pub resources_per_minute: u32,
     pub total_resources_available: u32,
@@ -26,6 +30,17 @@ pub struct Game {
     pub resources_spent_player2: u32,
     pub resources_spent_player3: u32,
     pub resources_spent_player4: u32,
+    pub xp_per_minute_per_tile: u32,
+    pub xp_player1: u32,
+    pub xp_player2: u32,
+    pub xp_player3: u32,
+    pub xp_player4: u32,
+    pub tile_count_color1: u32,
+    pub tile_count_color2: u32,
+    pub tile_count_color3: u32,
+    pub tile_count_color4: u32,
+    // 4 bytes of padding to align to 8 bytes before array
+    pub _padding_u32: [u8; 4],
     // Array of TileData (4-byte aligned)
     pub tile_data: [TileData; 144],
     // 1-byte fields grouped together at the end
@@ -47,12 +62,26 @@ impl Game {
         + 32                     // player4
         + 8                      // game_id
         + 8                      // available_resources_timestamp
+        + 8                      // xp_timestamp_player1
+        + 8                      // xp_timestamp_player2
+        + 8                      // xp_timestamp_player3
+        + 8                      // xp_timestamp_player4
         + 4                      // resources_per_minute
         + 4                      // total_resources_available
         + 4                      // resources_spent_player1
         + 4                      // resources_spent_player2
         + 4                      // resources_spent_player3
         + 4                      // resources_spent_player4
+        + 4                      // xp_per_minute_per_tile
+        + 4                      // xp_player1
+        + 4                      // xp_player2
+        + 4                      // xp_player3
+        + 4                      // xp_player4
+        + 4                      // tile_count_color1
+        + 4                      // tile_count_color2
+        + 4                      // tile_count_color3
+        + 4                      // tile_count_color4
+        + 4                      // padding to align to 8 bytes
         + (144 * 4)              // tile_data (144 * 4)
         + 5                      // game_state + rows + columns + version + bump
         + 3;                     // padding

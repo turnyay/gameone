@@ -211,24 +211,59 @@ const Games: React.FC = () => {
           const player3 = new PublicKey(data.slice(96, 128));
           const player4 = new PublicKey(data.slice(128, 160));
           
-          // Read game_id (8 bytes) - NEW FIELD
+          // Read game_id (8 bytes)
           const gameId = data.readBigUInt64LE(160);
           
-          // Read resources_per_minute (4 bytes)
-          const resourcesPerMinute = data.readUInt32LE(168);
+          // Read available_resources_timestamp (i64, 8 bytes)
+          const availableResourcesTimestamp = Number(data.readBigInt64LE(168));
           
-          // Read tile_data (144 * 4 bytes)
+          // Read xp_timestamp_player1-4 (i64 each, 8 bytes each)
+          const xpTimestampPlayer1 = Number(data.readBigInt64LE(176));
+          const xpTimestampPlayer2 = Number(data.readBigInt64LE(184));
+          const xpTimestampPlayer3 = Number(data.readBigInt64LE(192));
+          const xpTimestampPlayer4 = Number(data.readBigInt64LE(200));
+          
+          // Read resources_per_minute (u32, 4 bytes)
+          const resourcesPerMinute = data.readUInt32LE(208);
+          
+          // Read total_resources_available (u32, 4 bytes)
+          const totalResourcesAvailable = data.readUInt32LE(212);
+          
+          // Read resources_spent_player1-4 (u32 each, 4 bytes each)
+          const resourcesSpentPlayer1 = data.readUInt32LE(216);
+          const resourcesSpentPlayer2 = data.readUInt32LE(220);
+          const resourcesSpentPlayer3 = data.readUInt32LE(224);
+          const resourcesSpentPlayer4 = data.readUInt32LE(228);
+          
+          // Read xp_per_minute_per_tile (u32, 4 bytes)
+          const xpPerMinutePerTile = data.readUInt32LE(232);
+          
+          // Read xp_player1-4 (u32 each, 4 bytes each)
+          const xpPlayer1 = data.readUInt32LE(236);
+          const xpPlayer2 = data.readUInt32LE(240);
+          const xpPlayer3 = data.readUInt32LE(244);
+          const xpPlayer4 = data.readUInt32LE(248);
+          
+          // Read tile_count_color1-4 (u32 each, 4 bytes each)
+          const tileCountColor1 = data.readUInt32LE(252);
+          const tileCountColor2 = data.readUInt32LE(256);
+          const tileCountColor3 = data.readUInt32LE(260);
+          const tileCountColor4 = data.readUInt32LE(264);
+          
+          // Skip _padding_u32 (4 bytes)
+          
+          // Read tile_data (144 * 4 bytes) - starts at offset 272
           // Each TileData is: color (u8) + _pad (u8) + resource_count (u16) = 4 bytes
           const parsedTileData: Array<{ color: number; resourceCount: number }> = [];
           for (let j = 0; j < 144; j++) {
-            const offset = 172 + (j * 4);
+            const offset = 272 + (j * 4);
             const color = data.readUInt8(offset);
             const resourceCount = data.readUInt16LE(offset + 2);
             parsedTileData.push({ color, resourceCount });
           }
           
           // Read game state and other fields (5 bytes)
-          const gameStateOffset = 172 + (144 * 4);
+          const gameStateOffset = 272 + (144 * 4);
           const gameState = data.readUInt8(gameStateOffset);
           const rows = data.readUInt8(gameStateOffset + 1);
           const columns = data.readUInt8(gameStateOffset + 2);

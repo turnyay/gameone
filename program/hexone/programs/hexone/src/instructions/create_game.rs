@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use crate::state::game::Game;
 use crate::state::platform::Platform;
 use crate::error::HexoneError;
-use crate::constants::RESOURCES_PER_MINUTE;
+use crate::constants::{RESOURCES_PER_MINUTE, XP_PER_MINUTE_PER_TILE};
 
 #[derive(Accounts)]
 pub struct CreateGame<'info> {
@@ -85,6 +85,24 @@ pub fn create_game(ctx: Context<CreateGame>) -> Result<()> {
     game.resources_spent_player2 = 0;
     game.resources_spent_player3 = 0;
     game.resources_spent_player4 = 0;
+
+    // Initialize XP tracking fields
+    game.xp_per_minute_per_tile = XP_PER_MINUTE_PER_TILE;
+    let current_timestamp = clock.unix_timestamp;
+    game.xp_timestamp_player1 = current_timestamp;
+    game.xp_timestamp_player2 = current_timestamp;
+    game.xp_timestamp_player3 = current_timestamp;
+    game.xp_timestamp_player4 = current_timestamp;
+    game.xp_player1 = 0;
+    game.xp_player2 = 0;
+    game.xp_player3 = 0;
+    game.xp_player4 = 0;
+    
+    // Initialize tile counts (each player starts with 1 tile)
+    game.tile_count_color1 = 1;
+    game.tile_count_color2 = 1;
+    game.tile_count_color3 = 1;
+    game.tile_count_color4 = 1;
 
     // Increment platform game count
     platform.game_count += 1;

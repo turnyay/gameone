@@ -16,7 +16,7 @@ export class HexTile extends Phaser.GameObjects.Container {
   private offsetHeight: number;
   private resources: number;
   private originalColorIndex: number | null = null; // Store the original player color index
-  private hasSpecialBorder: 'gold' | 'silver' | null = null; // Track if tile has a special border
+  private hasSpecialBorder: 'gold' | 'silver' | 'bronze' | 'iron' | null = null; // Track if tile has a special border
 
   static players: Player[] = [];
   static playerColorIndex: number = 0;
@@ -577,7 +577,8 @@ export class HexTile extends Phaser.GameObjects.Container {
   setGoldBorder() {
     this.hasSpecialBorder = 'gold';
     // Only modify the border stroke, keep hex fill color unchanged
-    this.border.setStrokeStyle(5, COLORS.GOLD);
+    // Use thicker border for inner rings (gold = center)
+    this.border.setStrokeStyle(8, COLORS.GOLD);
     this.border.setVisible(true);
     this.border.setDepth(20); // Ensure border is on top
     // Ensure border fill remains transparent
@@ -587,7 +588,30 @@ export class HexTile extends Phaser.GameObjects.Container {
   setSilverBorder() {
     this.hasSpecialBorder = 'silver';
     // Only modify the border stroke, keep hex fill color unchanged
-    this.border.setStrokeStyle(5, COLORS.SILVER);
+    // Use thicker border for inner rings (silver = first ring)
+    this.border.setStrokeStyle(7, COLORS.SILVER);
+    this.border.setVisible(true);
+    this.border.setDepth(20); // Ensure border is on top
+    // Ensure border fill remains transparent
+    this.border.setFillStyle(0x000000, 0);
+  }
+
+  setBronzeBorder() {
+    this.hasSpecialBorder = 'bronze';
+    // Only modify the border stroke, keep hex fill color unchanged
+    // Use same bold border as silver (7px)
+    this.border.setStrokeStyle(7, COLORS.BRONZE);
+    this.border.setVisible(true);
+    this.border.setDepth(20); // Ensure border is on top
+    // Ensure border fill remains transparent
+    this.border.setFillStyle(0x000000, 0);
+  }
+
+  setIronBorder() {
+    this.hasSpecialBorder = 'iron';
+    // Only modify the border stroke, keep hex fill color unchanged
+    // Use same bold border as silver (7px)
+    this.border.setStrokeStyle(7, COLORS.IRON);
     this.border.setVisible(true);
     this.border.setDepth(20); // Ensure border is on top
     // Ensure border fill remains transparent

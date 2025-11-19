@@ -8,6 +8,63 @@
   },
   "instructions": [
     {
+      "name": "add_resources",
+      "discriminator": [
+        120,
+        160,
+        1,
+        224,
+        108,
+        122,
+        121,
+        64
+      ],
+      "accounts": [
+        {
+          "name": "wallet",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "player",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  121,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "wallet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "game",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "tile_index",
+          "type": "u16"
+        },
+        {
+          "name": "resources_to_add",
+          "type": "u32"
+        }
+      ]
+    },
+    {
       "name": "attack_tile",
       "discriminator": [
         238,
@@ -692,8 +749,93 @@
             "type": "u64"
           },
           {
+            "name": "available_resources_timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "xp_timestamp_player1",
+            "type": "i64"
+          },
+          {
+            "name": "xp_timestamp_player2",
+            "type": "i64"
+          },
+          {
+            "name": "xp_timestamp_player3",
+            "type": "i64"
+          },
+          {
+            "name": "xp_timestamp_player4",
+            "type": "i64"
+          },
+          {
             "name": "resources_per_minute",
             "type": "u32"
+          },
+          {
+            "name": "total_resources_available",
+            "type": "u32"
+          },
+          {
+            "name": "resources_spent_player1",
+            "type": "u32"
+          },
+          {
+            "name": "resources_spent_player2",
+            "type": "u32"
+          },
+          {
+            "name": "resources_spent_player3",
+            "type": "u32"
+          },
+          {
+            "name": "resources_spent_player4",
+            "type": "u32"
+          },
+          {
+            "name": "xp_per_minute_per_tile",
+            "type": "u32"
+          },
+          {
+            "name": "xp_player1",
+            "type": "u32"
+          },
+          {
+            "name": "xp_player2",
+            "type": "u32"
+          },
+          {
+            "name": "xp_player3",
+            "type": "u32"
+          },
+          {
+            "name": "xp_player4",
+            "type": "u32"
+          },
+          {
+            "name": "tile_count_color1",
+            "type": "u32"
+          },
+          {
+            "name": "tile_count_color2",
+            "type": "u32"
+          },
+          {
+            "name": "tile_count_color3",
+            "type": "u32"
+          },
+          {
+            "name": "tile_count_color4",
+            "type": "u32"
+          },
+          {
+            "name": "_padding_u32",
+            "type": {
+              "array": [
+                "u8",
+                4
+              ]
+            }
           },
           {
             "name": "tile_data",
@@ -733,7 +875,7 @@
             "type": {
               "array": [
                 "u8",
-                7
+                3
               ]
             }
           }

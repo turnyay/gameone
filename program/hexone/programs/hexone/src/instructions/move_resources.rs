@@ -3,6 +3,100 @@ use crate::state::game::{Game, GAME_STATE_IN_PROGRESS};
 use crate::state::player::Player;
 use crate::error::HexoneError;
 
+/// Calculate new XP based on time elapsed
+/// Returns the XP to add: minutes * xp_per_minute_per_tile * number_of_tiles
+fn calculate_new_xp(
+    current_time: i64,
+    last_timestamp: i64,
+    xp_per_minute_per_tile: u32,
+    number_of_tiles: u32,
+) -> u32 {
+    let time_diff_seconds = current_time - last_timestamp;
+    
+    // Only calculate if more than 1 minute (60 seconds) has passed
+    if time_diff_seconds > 60 {
+        let minutes_elapsed = (time_diff_seconds / 60) as u32;
+        // Calculate XP: minutes * xp_per_minute_per_tile * number_of_tiles
+        minutes_elapsed
+            .checked_mul(xp_per_minute_per_tile)
+            .and_then(|x| x.checked_mul(number_of_tiles))
+            .unwrap_or(u32::MAX)
+    } else {
+        0
+    }
+}
+
+/// Update XP for all players based on time elapsed
+fn update_all_players_xp(game: &mut Game, current_time: i64) -> Result<()> {
+    let xp_per_minute_per_tile = game.xp_per_minute_per_tile;
+    
+    // Update player 1 XP
+    if current_time - game.xp_timestamp_player1 > 60 {
+        let calculated_xp = calculate_new_xp(
+            current_time,
+            game.xp_timestamp_player1,
+            xp_per_minute_per_tile,
+            game.tile_count_color1,
+        );
+        game.xp_player1 = game.xp_player1
+            .checked_add(calculated_xp)
+            .ok_or(HexoneError::Invalid)?;
+        let time_diff = current_time - game.xp_timestamp_player1;
+        let minutes_elapsed = time_diff / 60;
+        game.xp_timestamp_player1 = game.xp_timestamp_player1 + (minutes_elapsed * 60);
+    }
+    
+    // Update player 2 XP
+    if current_time - game.xp_timestamp_player2 > 60 {
+        let calculated_xp = calculate_new_xp(
+            current_time,
+            game.xp_timestamp_player2,
+            xp_per_minute_per_tile,
+            game.tile_count_color2,
+        );
+        game.xp_player2 = game.xp_player2
+            .checked_add(calculated_xp)
+            .ok_or(HexoneError::Invalid)?;
+        let time_diff = current_time - game.xp_timestamp_player2;
+        let minutes_elapsed = time_diff / 60;
+        game.xp_timestamp_player2 = game.xp_timestamp_player2 + (minutes_elapsed * 60);
+    }
+    
+    // Update player 3 XP
+    if current_time - game.xp_timestamp_player3 > 60 {
+        let calculated_xp = calculate_new_xp(
+            current_time,
+            game.xp_timestamp_player3,
+            xp_per_minute_per_tile,
+            game.tile_count_color3,
+        );
+        game.xp_player3 = game.xp_player3
+            .checked_add(calculated_xp)
+            .ok_or(HexoneError::Invalid)?;
+        let time_diff = current_time - game.xp_timestamp_player3;
+        let minutes_elapsed = time_diff / 60;
+        game.xp_timestamp_player3 = game.xp_timestamp_player3 + (minutes_elapsed * 60);
+    }
+    
+    // Update player 4 XP
+    if current_time - game.xp_timestamp_player4 > 60 {
+        let calculated_xp = calculate_new_xp(
+            current_time,
+            game.xp_timestamp_player4,
+            xp_per_minute_per_tile,
+            game.tile_count_color4,
+        );
+        game.xp_player4 = game.xp_player4
+            .checked_add(calculated_xp)
+            .ok_or(HexoneError::Invalid)?;
+        let time_diff = current_time - game.xp_timestamp_player4;
+        let minutes_elapsed = time_diff / 60;
+        game.xp_timestamp_player4 = game.xp_timestamp_player4 + (minutes_elapsed * 60);
+    }
+    
+    Ok(())
+}
+
 /// Check if two tiles are adjacent in a hexagonal grid
 /// Tiles are indexed as: index = row * columns + column
 pub(crate) fn are_tiles_adjacent(
@@ -91,15 +185,15 @@ pub(crate) fn move_resources(
         HexoneError::Invalid
     );
 
-    // Check if player is in the game and determine their color
-    let player_color = if game.player1 == wallet_key {
-        1u8 // Red
+    // Check if player is in the game and determine their color and index
+    let (player_color, player_index) = if game.player1 == wallet_key {
+        (1u8, 1usize) // Red
     } else if game.player2 == wallet_key {
-        2u8 // Yellow
+        (2u8, 2usize) // Yellow
     } else if game.player3 == wallet_key {
-        3u8 // Green
+        (3u8, 3usize) // Green
     } else if game.player4 == wallet_key {
-        4u8 // Blue
+        (4u8, 4usize) // Blue
     } else {
         return Err(HexoneError::PlayerNotAuthorized.into());
     };
@@ -169,12 +263,50 @@ pub(crate) fn move_resources(
         .checked_sub(resources_to_move)
         .ok_or(HexoneError::Invalid)?;
 
+    // Check if destination tile was empty (color == 0) before setting color
+    let was_empty_tile = game.tile_data[destination_tile_index as usize].color == 0;
+    
+    // Get clock before making changes
+    let clock = Clock::get()?;
+    let current_time = clock.unix_timestamp;
+    
+    // Update XP for all players BEFORE changing tile counts (use old tile counts)
+    update_all_players_xp(game, current_time)?;
+    
     // Update destination tile: add resources and set color
     let dest_resource_count = game.tile_data[destination_tile_index as usize].resource_count;
     game.tile_data[destination_tile_index as usize].resource_count = dest_resource_count
         .checked_add(resources_to_move)
         .ok_or(HexoneError::Invalid)?;
     game.tile_data[destination_tile_index as usize].color = player_color;
+
+    // If moving to an empty tile, increment tile count for the player's color
+    // (This happens AFTER XP calculation, so XP was calculated with old tile count)
+    if was_empty_tile {
+        match player_index {
+            1 => {
+                game.tile_count_color1 = game.tile_count_color1
+                    .checked_add(1)
+                    .ok_or(HexoneError::Invalid)?;
+            }
+            2 => {
+                game.tile_count_color2 = game.tile_count_color2
+                    .checked_add(1)
+                    .ok_or(HexoneError::Invalid)?;
+            }
+            3 => {
+                game.tile_count_color3 = game.tile_count_color3
+                    .checked_add(1)
+                    .ok_or(HexoneError::Invalid)?;
+            }
+            4 => {
+                game.tile_count_color4 = game.tile_count_color4
+                    .checked_add(1)
+                    .ok_or(HexoneError::Invalid)?;
+            }
+            _ => return Err(HexoneError::Invalid.into()),
+        }
+    }
 
     Ok(())
 }

@@ -10,7 +10,9 @@ export const COLORS = {
   DARK_GREEN: 0x003300,
   DARK_RED: 0x330000,
   GOLD: 0xffd700,
-  SILVER: 0xc0c0c0
+  SILVER: 0xc0c0c0,
+  BRONZE: 0x8b4513, // Dark bronze
+  IRON: 0x708090 // Grey-blue (slate grey)
 };
 
 export const PLAYER_COLORS = [COLORS.RED, COLORS.YELLOW, COLORS.GREEN, COLORS.BLUE];

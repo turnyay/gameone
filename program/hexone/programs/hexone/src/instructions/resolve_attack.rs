@@ -4,8 +4,102 @@ use crate::state::defender::Defender;
 use crate::error::HexoneError;
 use sha2::{Sha256, Digest};
 
+/// Calculate new XP based on time elapsed
+/// Returns the XP to add: minutes * xp_per_minute_per_tile * number_of_tiles
+fn calculate_new_xp(
+    current_time: i64,
+    last_timestamp: i64,
+    xp_per_minute_per_tile: u32,
+    number_of_tiles: u32,
+) -> u32 {
+    let time_diff_seconds = current_time - last_timestamp;
+    
+    // Only calculate if more than 1 minute (60 seconds) has passed
+    if time_diff_seconds > 60 {
+        let minutes_elapsed = (time_diff_seconds / 60) as u32;
+        // Calculate XP: minutes * xp_per_minute_per_tile * number_of_tiles
+        minutes_elapsed
+            .checked_mul(xp_per_minute_per_tile)
+            .and_then(|x| x.checked_mul(number_of_tiles))
+            .unwrap_or(u32::MAX)
+    } else {
+        0
+    }
+}
+
 // Minimum time to wait before resolving (3 seconds)
 const MIN_ATTACK_DURATION: i64 = 3;
+
+/// Update XP for all players based on time elapsed
+fn update_all_players_xp(game: &mut Game, current_time: i64) -> Result<()> {
+    let xp_per_minute_per_tile = game.xp_per_minute_per_tile;
+    
+    // Update player 1 XP
+    if current_time - game.xp_timestamp_player1 > 60 {
+        let calculated_xp = calculate_new_xp(
+            current_time,
+            game.xp_timestamp_player1,
+            xp_per_minute_per_tile,
+            game.tile_count_color1,
+        );
+        game.xp_player1 = game.xp_player1
+            .checked_add(calculated_xp)
+            .ok_or(HexoneError::Invalid)?;
+        let time_diff = current_time - game.xp_timestamp_player1;
+        let minutes_elapsed = time_diff / 60;
+        game.xp_timestamp_player1 = game.xp_timestamp_player1 + (minutes_elapsed * 60);
+    }
+    
+    // Update player 2 XP
+    if current_time - game.xp_timestamp_player2 > 60 {
+        let calculated_xp = calculate_new_xp(
+            current_time,
+            game.xp_timestamp_player2,
+            xp_per_minute_per_tile,
+            game.tile_count_color2,
+        );
+        game.xp_player2 = game.xp_player2
+            .checked_add(calculated_xp)
+            .ok_or(HexoneError::Invalid)?;
+        let time_diff = current_time - game.xp_timestamp_player2;
+        let minutes_elapsed = time_diff / 60;
+        game.xp_timestamp_player2 = game.xp_timestamp_player2 + (minutes_elapsed * 60);
+    }
+    
+    // Update player 3 XP
+    if current_time - game.xp_timestamp_player3 > 60 {
+        let calculated_xp = calculate_new_xp(
+            current_time,
+            game.xp_timestamp_player3,
+            xp_per_minute_per_tile,
+            game.tile_count_color3,
+        );
+        game.xp_player3 = game.xp_player3
+            .checked_add(calculated_xp)
+            .ok_or(HexoneError::Invalid)?;
+        let time_diff = current_time - game.xp_timestamp_player3;
+        let minutes_elapsed = time_diff / 60;
+        game.xp_timestamp_player3 = game.xp_timestamp_player3 + (minutes_elapsed * 60);
+    }
+    
+    // Update player 4 XP
+    if current_time - game.xp_timestamp_player4 > 60 {
+        let calculated_xp = calculate_new_xp(
+            current_time,
+            game.xp_timestamp_player4,
+            xp_per_minute_per_tile,
+            game.tile_count_color4,
+        );
+        game.xp_player4 = game.xp_player4
+            .checked_add(calculated_xp)
+            .ok_or(HexoneError::Invalid)?;
+        let time_diff = current_time - game.xp_timestamp_player4;
+        let minutes_elapsed = time_diff / 60;
+        game.xp_timestamp_player4 = game.xp_timestamp_player4 + (minutes_elapsed * 60);
+    }
+    
+    Ok(())
+}
 
 // Helper function to convert blockhash bytes to u64
 fn blockhash_to_u64(blockhash: &[u8; 32]) -> u64 {
@@ -168,6 +262,9 @@ pub fn resolve_attack(ctx: Context<ResolveAttack>) -> Result<()> {
     let attacker_resources = game.tile_data[attacker_tile_idx].resource_count;
     let defender_resources = game.tile_data[defender_tile_idx].resource_count;
 
+    // Update XP for all players BEFORE changing tile counts (use old tile counts)
+    update_all_players_xp(game, clock.unix_timestamp)?;
+    
     if attacker_won {
         // Attacker wins: defender loses 1 resource per successful attack
         if defender_resources > 1 {
@@ -181,13 +278,69 @@ pub fn resolve_attack(ctx: Context<ResolveAttack>) -> Result<()> {
                 HexoneError::Invalid
             );
             
-            game.tile_data[defender_tile_idx].color = defender.attacker_tile_color;
+            // Store old colors before changing
+            let old_defender_color = game.tile_data[defender_tile_idx].color;
+            let attacker_color = defender.attacker_tile_color;
+            
+            // Update tile ownership
+            game.tile_data[defender_tile_idx].color = attacker_color;
             game.tile_data[defender_tile_idx].resource_count = 1;
             
             // Move 1 resource from attacker to defender tile
             game.tile_data[attacker_tile_idx].resource_count = current_attacker_resources
                 .checked_sub(1)
                 .ok_or(HexoneError::Invalid)?;
+            
+            // Update tile counts: decrement defender's count, increment attacker's count
+            // (This happens AFTER XP calculation, so XP was calculated with old tile counts)
+            match old_defender_color {
+                1 => {
+                    game.tile_count_color1 = game.tile_count_color1
+                        .checked_sub(1)
+                        .ok_or(HexoneError::Invalid)?;
+                }
+                2 => {
+                    game.tile_count_color2 = game.tile_count_color2
+                        .checked_sub(1)
+                        .ok_or(HexoneError::Invalid)?;
+                }
+                3 => {
+                    game.tile_count_color3 = game.tile_count_color3
+                        .checked_sub(1)
+                        .ok_or(HexoneError::Invalid)?;
+                }
+                4 => {
+                    game.tile_count_color4 = game.tile_count_color4
+                        .checked_sub(1)
+                        .ok_or(HexoneError::Invalid)?;
+                }
+                _ => {}
+            }
+            
+            // Increment attacker's tile count
+            match attacker_color {
+                1 => {
+                    game.tile_count_color1 = game.tile_count_color1
+                        .checked_add(1)
+                        .ok_or(HexoneError::Invalid)?;
+                }
+                2 => {
+                    game.tile_count_color2 = game.tile_count_color2
+                        .checked_add(1)
+                        .ok_or(HexoneError::Invalid)?;
+                }
+                3 => {
+                    game.tile_count_color3 = game.tile_count_color3
+                        .checked_add(1)
+                        .ok_or(HexoneError::Invalid)?;
+                }
+                4 => {
+                    game.tile_count_color4 = game.tile_count_color4
+                        .checked_add(1)
+                        .ok_or(HexoneError::Invalid)?;
+                }
+                _ => return Err(HexoneError::Invalid.into()),
+            }
         }
     } else {
         // Defender wins: attacker loses 1 resource per failed attack
