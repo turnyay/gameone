@@ -490,6 +490,8 @@ export const UI: React.FC<UIProps> = ({
                 const isCurrentUser = currentWallet && playerPubkey && playerPubkey === currentWallet;
                 const isEmpty = !playerPubkey;
                 
+                const tierCount = tierCounts[playerIndex];
+                
                 return {
                   playerIndex,
                   tileCount,
@@ -498,6 +500,11 @@ export const UI: React.FC<UIProps> = ({
                   baseXpGained: simulatedXpDataItem.baseXpGained,
                   bonusXpGained: simulatedXpDataItem.bonusXpGained,
                   bonusXpPerMin: bonusXpPerMinValues[playerIndex],
+                  tierCount,
+                  goldXpPerMin,
+                  silverXpPerMin,
+                  bronzeXpPerMin,
+                  ironXpPerMin,
                   color,
                   colorHex,
                   playerName: playerNames[playerIndex],
@@ -609,12 +616,121 @@ export const UI: React.FC<UIProps> = ({
                         {player.simulatedXp}
                       </span>
                     </div>
-                    <span style={{ color: '#ffa500', minWidth: '80px', textAlign: 'right' }}>
-                      {player.tileCount}
-                    </span>
-                    <span style={{ color: '#ffd700', minWidth: '80px', textAlign: 'right', fontWeight: 'bold' }}>
-                      {player.bonusXpPerMin}
-                    </span>
+                    <div style={{ 
+                      position: 'relative',
+                      display: 'inline-block',
+                      minWidth: '80px',
+                      textAlign: 'right'
+                    }}>
+                      <span 
+                        style={{ 
+                          color: '#ffa500',
+                          cursor: 'help'
+                        }}
+                        onMouseEnter={(e) => {
+                          const tooltip = e.currentTarget.nextElementSibling as HTMLElement;
+                          if (tooltip) tooltip.style.display = 'block';
+                        }}
+                        onMouseLeave={(e) => {
+                          const tooltip = e.currentTarget.nextElementSibling as HTMLElement;
+                          if (tooltip) tooltip.style.display = 'none';
+                        }}
+                      >
+                        {player.tileCount}
+                      </span>
+                      <div
+                        style={{
+                          display: 'none',
+                          position: 'absolute',
+                          bottom: '100%',
+                          right: 0,
+                          marginBottom: '5px',
+                          padding: '8px 12px',
+                          backgroundColor: '#1a1a1a',
+                          border: '1px solid #444',
+                          borderRadius: '4px',
+                          fontSize: '12px',
+                          fontFamily: 'monospace',
+                          color: '#fff',
+                          whiteSpace: 'nowrap',
+                          zIndex: 1000,
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.5)'
+                        }}
+                      >
+                        <div style={{ marginBottom: '4px', fontWeight: 'bold', color: '#ffa500' }}>Base XP/min</div>
+                        <div style={{ color: '#ffa500' }}>
+                          {player.tileCount} tiles × {xpPerMinutePerTile} = +{player.tileCount * xpPerMinutePerTile} XP/min
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ 
+                      position: 'relative',
+                      display: 'inline-block',
+                      minWidth: '80px',
+                      textAlign: 'right'
+                    }}>
+                      <span 
+                        style={{ 
+                          color: '#ffd700', 
+                          fontWeight: 'bold',
+                          cursor: 'help'
+                        }}
+                        onMouseEnter={(e) => {
+                          const tooltip = e.currentTarget.nextElementSibling as HTMLElement;
+                          if (tooltip) tooltip.style.display = 'block';
+                        }}
+                        onMouseLeave={(e) => {
+                          const tooltip = e.currentTarget.nextElementSibling as HTMLElement;
+                          if (tooltip) tooltip.style.display = 'none';
+                        }}
+                      >
+                        {player.bonusXpPerMin}
+                      </span>
+                      <div
+                        style={{
+                          display: 'none',
+                          position: 'absolute',
+                          bottom: '100%',
+                          right: 0,
+                          marginBottom: '5px',
+                          padding: '8px 12px',
+                          backgroundColor: '#1a1a1a',
+                          border: '1px solid #444',
+                          borderRadius: '4px',
+                          fontSize: '12px',
+                          fontFamily: 'monospace',
+                          color: '#fff',
+                          whiteSpace: 'nowrap',
+                          zIndex: 1000,
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.5)'
+                        }}
+                      >
+                        <div style={{ marginBottom: '4px', fontWeight: 'bold', color: '#ffd700' }}>Tier Bonus XP/min</div>
+                        {player.tierCount.gold > 0 && (
+                          <div style={{ color: '#ffd700' }}>
+                            {player.tierCount.gold} gold × {player.goldXpPerMin} = +{player.tierCount.gold * player.goldXpPerMin}
+                          </div>
+                        )}
+                        {player.tierCount.silver > 0 && (
+                          <div style={{ color: '#c0c0c0' }}>
+                            {player.tierCount.silver} silver × {player.silverXpPerMin} = +{player.tierCount.silver * player.silverXpPerMin}
+                          </div>
+                        )}
+                        {player.tierCount.bronze > 0 && (
+                          <div style={{ color: '#8b4513' }}>
+                            {player.tierCount.bronze} bronze × {player.bronzeXpPerMin} = +{player.tierCount.bronze * player.bronzeXpPerMin}
+                          </div>
+                        )}
+                        {player.tierCount.iron > 0 && (
+                          <div style={{ color: '#708090' }}>
+                            {player.tierCount.iron} iron × {player.ironXpPerMin} = +{player.tierCount.iron * player.ironXpPerMin}
+                          </div>
+                        )}
+                        {(player.tierCount.gold === 0 && player.tierCount.silver === 0 && player.tierCount.bronze === 0 && player.tierCount.iron === 0) && (
+                          <div style={{ color: '#888' }}>No tier tiles</div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 );
               });
