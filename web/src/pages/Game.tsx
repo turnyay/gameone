@@ -322,11 +322,23 @@ const Game: React.FC = () => {
       const bronzeTierBonusXpPerMin = data.length > tierBonusXpOffset + 2 ? data.readUInt8(tierBonusXpOffset + 2) : 10;
       const ironTierBonusXpPerMin = data.length > tierBonusXpOffset + 3 ? data.readUInt8(tierBonusXpOffset + 3) : 5;
       
-      // Skip padding (4 bytes)
+      // Skip padding (4 bytes) + winning_player_pubkey (32 bytes) + winning_xp_limit (8 bytes)
       const paddingOffset = tierBonusXpOffset + 4;
+      const winningPlayerPubkeyOffset = paddingOffset + 4;
+      const winningXpLimitOffset = winningPlayerPubkeyOffset + 32;
       
-      // Read game state and other fields (5 bytes)
-      const gameStateOffset = paddingOffset + 4;
+      // Read winning player pubkey (32 bytes)
+      const winningPlayerPubkey = data.length > winningPlayerPubkeyOffset 
+        ? new PublicKey(data.slice(winningPlayerPubkeyOffset, winningPlayerPubkeyOffset + 32))
+        : PublicKey.default;
+      
+      // Read winning XP limit (u64, 8 bytes)
+      const winningXpLimit = data.length > winningXpLimitOffset 
+        ? Number(data.readBigUInt64LE(winningXpLimitOffset))
+        : 10000;
+      
+      // Read game state and other fields (6 bytes: game_state, rows, columns, version, bump, winner_calculation_flag)
+      const gameStateOffset = winningXpLimitOffset + 8;
       const gameState = data.length > gameStateOffset ? data.readUInt8(gameStateOffset) : 0;
       const rows = data.length > gameStateOffset + 1 ? data.readUInt8(gameStateOffset + 1) : 11;
       const columns = data.length > gameStateOffset + 2 ? data.readUInt8(gameStateOffset + 2) : 13;
@@ -350,6 +362,9 @@ const Game: React.FC = () => {
           break;
         case 2:
           gameStateStr = 'Completed';
+          break;
+        case 3:
+          gameStateStr = 'Winner Found (Not Paid Out)';
           break;
         default:
           gameStateStr = `Unknown (${gameState})`;
@@ -429,6 +444,10 @@ const Game: React.FC = () => {
       (gameData as any).silverTierBonusXpPerMin = silverTierBonusXpPerMin;
       (gameData as any).bronzeTierBonusXpPerMin = bronzeTierBonusXpPerMin;
       (gameData as any).ironTierBonusXpPerMin = ironTierBonusXpPerMin;
+      
+      // Store winning player and XP limit
+      (gameData as any).winningPlayerPubkey = winningPlayerPubkey;
+      (gameData as any).winningXpLimit = winningXpLimit;
       
       // Calculate simulated XP for each player
       const calculateSimulatedXP = (savedXP: number, timestamp: number, tileCount: number) => {

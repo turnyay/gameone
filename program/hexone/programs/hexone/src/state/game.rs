@@ -7,6 +7,7 @@ use crate::error::HexoneError;
 pub const GAME_STATE_WAITING: u8 = 0;
 pub const GAME_STATE_IN_PROGRESS: u8 = 1;
 pub const GAME_STATE_COMPLETED: u8 = 2;
+pub const GAME_STATE_WINNER_FOUND_NOT_PAID_OUT: u8 = 3;
 
 #[account(zero_copy)]
 #[repr(C)]
@@ -72,14 +73,19 @@ pub struct Game {
     pub iron_tier_bonus_xp_per_min: u8,
     // 4 bytes of padding to align to 8 bytes after tier bonus XP
     pub _padding_tier_bonus: [u8; 4],
+    // Winning player and XP limit
+    pub winning_player_pubkey: Pubkey,
+    pub winning_xp_limit: u64,
     // 1-byte fields grouped together at the end
     pub game_state: u8,
     pub rows: u8,
     pub columns: u8,
     pub version: u8,
     pub bump: u8,
-    // 3 bytes of padding to align to 8 bytes
-    pub _padding: [u8; 3]
+    // Flag to indicate if limit has been reached and winner should be calculated
+    pub winner_calculation_flag: u8,
+    // 2 bytes of padding to align to 8 bytes
+    pub _padding: [u8; 2]
 }
 
 /// Calculate the tier (ring distance) of a tile from the center
@@ -367,6 +373,184 @@ pub fn calculate_tier_bonus_xp(
     Ok(total_bonus_xp)
 }
 
+/// Check if any player has exceeded the winning XP limit and update game state accordingly
+/// When limit is reached, calculates totals for all players and sets the highest as winner
+pub fn check_for_winner(game: &mut Game, current_time: i64) -> Result<()> {
+    // Only check if game is still in progress
+    if game.game_state != GAME_STATE_IN_PROGRESS {
+        return Ok(());
+    }
+    
+    // Check each player's XP against the limit
+    let players = [
+        (game.player1, game.xp_player1),
+        (game.player2, game.xp_player2),
+        (game.player3, game.xp_player3),
+        (game.player4, game.xp_player4),
+    ];
+    
+    // Check if any player has reached the limit (trigger flag)
+    let mut limit_reached = false;
+    for (player_pubkey, xp) in players.iter() {
+        // Skip default/empty pubkeys
+        if *player_pubkey == Pubkey::default() {
+            continue;
+        }
+        
+        // Check if XP exceeds limit
+        if (*xp as u64) >= game.winning_xp_limit {
+            limit_reached = true;
+            break;
+        }
+    }
+    
+    // If limit reached and flag not set, calculate all totals and find highest
+    if limit_reached && game.winner_calculation_flag == 0 {
+        game.winner_calculation_flag = 1;
+        
+        // Calculate total XP for each player (including simulated XP from current time)
+        let mut player_totals: Vec<(Pubkey, u64)> = Vec::new();
+        
+        // Player 1
+        if game.player1 != Pubkey::default() {
+            let time_diff = current_time - game.xp_timestamp_player1;
+            let mut total_xp = game.xp_player1 as u64;
+            
+            if time_diff > 60 {
+                let minutes_elapsed = (time_diff / 60) as u32;
+                // Calculate base XP
+                let base_xp = (minutes_elapsed as u64)
+                    .checked_mul(game.xp_per_minute_per_tile as u64)
+                    .and_then(|x| x.checked_mul(game.tile_count_color1 as u64))
+                    .ok_or(HexoneError::Invalid)?;
+                
+                // Calculate tier bonus XP
+                let tier_bonus_xp = calculate_tier_bonus_xp(
+                    minutes_elapsed,
+                    game.gold_tile_count_player1,
+                    game.silver_tile_count_player1,
+                    game.bronze_tile_count_player1,
+                    game.iron_tile_count_player1,
+                    game.gold_tier_bonus_xp_per_min,
+                    game.silver_tier_bonus_xp_per_min,
+                    game.bronze_tier_bonus_xp_per_min,
+                    game.iron_tier_bonus_xp_per_min,
+                )?;
+                
+                total_xp = total_xp
+                    .checked_add(base_xp)
+                    .and_then(|x| x.checked_add(tier_bonus_xp as u64))
+                    .ok_or(HexoneError::Invalid)?;
+            }
+            player_totals.push((game.player1, total_xp));
+        }
+        
+        // Player 2
+        if game.player2 != Pubkey::default() {
+            let time_diff = current_time - game.xp_timestamp_player2;
+            let mut total_xp = game.xp_player2 as u64;
+            
+            if time_diff > 60 {
+                let minutes_elapsed = (time_diff / 60) as u32;
+                let base_xp = (minutes_elapsed as u64)
+                    .checked_mul(game.xp_per_minute_per_tile as u64)
+                    .and_then(|x| x.checked_mul(game.tile_count_color2 as u64))
+                    .ok_or(HexoneError::Invalid)?;
+                
+                let tier_bonus_xp = calculate_tier_bonus_xp(
+                    minutes_elapsed,
+                    game.gold_tile_count_player2,
+                    game.silver_tile_count_player2,
+                    game.bronze_tile_count_player2,
+                    game.iron_tile_count_player2,
+                    game.gold_tier_bonus_xp_per_min,
+                    game.silver_tier_bonus_xp_per_min,
+                    game.bronze_tier_bonus_xp_per_min,
+                    game.iron_tier_bonus_xp_per_min,
+                )?;
+                
+                total_xp = total_xp
+                    .checked_add(base_xp)
+                    .and_then(|x| x.checked_add(tier_bonus_xp as u64))
+                    .ok_or(HexoneError::Invalid)?;
+            }
+            player_totals.push((game.player2, total_xp));
+        }
+        
+        // Player 3
+        if game.player3 != Pubkey::default() {
+            let time_diff = current_time - game.xp_timestamp_player3;
+            let mut total_xp = game.xp_player3 as u64;
+            
+            if time_diff > 60 {
+                let minutes_elapsed = (time_diff / 60) as u32;
+                let base_xp = (minutes_elapsed as u64)
+                    .checked_mul(game.xp_per_minute_per_tile as u64)
+                    .and_then(|x| x.checked_mul(game.tile_count_color3 as u64))
+                    .ok_or(HexoneError::Invalid)?;
+                
+                let tier_bonus_xp = calculate_tier_bonus_xp(
+                    minutes_elapsed,
+                    game.gold_tile_count_player3,
+                    game.silver_tile_count_player3,
+                    game.bronze_tile_count_player3,
+                    game.iron_tile_count_player3,
+                    game.gold_tier_bonus_xp_per_min,
+                    game.silver_tier_bonus_xp_per_min,
+                    game.bronze_tier_bonus_xp_per_min,
+                    game.iron_tier_bonus_xp_per_min,
+                )?;
+                
+                total_xp = total_xp
+                    .checked_add(base_xp)
+                    .and_then(|x| x.checked_add(tier_bonus_xp as u64))
+                    .ok_or(HexoneError::Invalid)?;
+            }
+            player_totals.push((game.player3, total_xp));
+        }
+        
+        // Player 4
+        if game.player4 != Pubkey::default() {
+            let time_diff = current_time - game.xp_timestamp_player4;
+            let mut total_xp = game.xp_player4 as u64;
+            
+            if time_diff > 60 {
+                let minutes_elapsed = (time_diff / 60) as u32;
+                let base_xp = (minutes_elapsed as u64)
+                    .checked_mul(game.xp_per_minute_per_tile as u64)
+                    .and_then(|x| x.checked_mul(game.tile_count_color4 as u64))
+                    .ok_or(HexoneError::Invalid)?;
+                
+                let tier_bonus_xp = calculate_tier_bonus_xp(
+                    minutes_elapsed,
+                    game.gold_tile_count_player4,
+                    game.silver_tile_count_player4,
+                    game.bronze_tile_count_player4,
+                    game.iron_tile_count_player4,
+                    game.gold_tier_bonus_xp_per_min,
+                    game.silver_tier_bonus_xp_per_min,
+                    game.bronze_tier_bonus_xp_per_min,
+                    game.iron_tier_bonus_xp_per_min,
+                )?;
+                
+                total_xp = total_xp
+                    .checked_add(base_xp)
+                    .and_then(|x| x.checked_add(tier_bonus_xp as u64))
+                    .ok_or(HexoneError::Invalid)?;
+            }
+            player_totals.push((game.player4, total_xp));
+        }
+        
+        // Find player with highest total XP
+        if let Some((winner_pubkey, _)) = player_totals.iter().max_by_key(|(_, xp)| xp) {
+            game.winning_player_pubkey = *winner_pubkey;
+            game.game_state = GAME_STATE_WINNER_FOUND_NOT_PAID_OUT;
+        }
+    }
+    
+    Ok(())
+}
+
 impl Game {
     pub const LEN: usize = 8     // discriminator
         + 32                     // admin
@@ -400,8 +584,10 @@ impl Game {
         + 16                     // tier counts (4 players * 4 tiers = 16 u8)
         + 4                      // tier bonus XP per minute (4 u8)
         + 4                      // padding to align to 8 bytes after tier bonus XP
-        + 5                      // game_state + rows + columns + version + bump
-        + 3;                     // padding to align to 8 bytes
+        + 32                     // winning_player_pubkey
+        + 8                      // winning_xp_limit
+        + 6                      // game_state + rows + columns + version + bump + winner_calculation_flag
+        + 2;                     // padding to align to 8 bytes
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Pod, Zeroable)]

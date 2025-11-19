@@ -139,6 +139,11 @@ pub fn create_game(ctx: Context<CreateGame>) -> Result<()> {
     game.bronze_tier_bonus_xp_per_min = BRONZE_TIER_BONUS_XP_PER_MIN;
     game.iron_tier_bonus_xp_per_min = IRON_TIER_BONUS_XP_PER_MIN;
 
+    // Initialize winning player and XP limit
+    game.winning_player_pubkey = Pubkey::default();
+    game.winning_xp_limit = 10_000; // Default to 10,000 XP
+    game.winner_calculation_flag = 0; // Flag to track if winner calculation has been triggered
+
     // Increment platform game count
     platform.game_count += 1;
     

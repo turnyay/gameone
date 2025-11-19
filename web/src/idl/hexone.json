@@ -931,13 +931,21 @@
             "type": "u8"
           },
           {
-            "name": "_paddingTierBonus",
+            "name": "_padding_tier_bonus",
             "type": {
               "array": [
                 "u8",
                 4
               ]
             }
+          },
+          {
+            "name": "winning_player_pubkey",
+            "type": "pubkey"
+          },
+          {
+            "name": "winning_xp_limit",
+            "type": "u64"
           },
           {
             "name": "game_state",
@@ -960,11 +968,15 @@
             "type": "u8"
           },
           {
+            "name": "winner_calculation_flag",
+            "type": "u8"
+          },
+          {
             "name": "_padding",
             "type": {
               "array": [
                 "u8",
-                3
+                2
               ]
             }
           }

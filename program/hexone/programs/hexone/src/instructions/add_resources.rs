@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use crate::state::game::{Game, GAME_STATE_IN_PROGRESS, calculate_tier_bonus_xp};
+use crate::state::game::{Game, GAME_STATE_IN_PROGRESS, calculate_tier_bonus_xp, check_for_winner};
 use crate::state::player::{Player, PLAYER_STATUS_PLAYING};
 use crate::error::HexoneError;
 
@@ -328,6 +328,9 @@ pub fn add_resources(
 
     // Update XP for all players
     update_all_players_xp(game, current_time)?;
+    
+    // Check if any player has reached the winning XP limit
+    check_for_winner(game, current_time)?;
 
     Ok(())
 }

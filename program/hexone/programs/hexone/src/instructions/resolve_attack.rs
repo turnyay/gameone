@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use crate::state::game::{Game, GAME_STATE_IN_PROGRESS, get_tile_tier, update_tier_count_on_gain, update_tier_count_on_loss, calculate_tier_bonus_xp};
+use crate::state::game::{Game, GAME_STATE_IN_PROGRESS, get_tile_tier, update_tier_count_on_gain, update_tier_count_on_loss, calculate_tier_bonus_xp, check_for_winner};
 use crate::state::defender::Defender;
 use crate::error::HexoneError;
 use sha2::{Sha256, Digest};
@@ -348,6 +348,9 @@ pub fn resolve_attack(ctx: Context<ResolveAttack>) -> Result<()> {
 
     // Update XP for all players BEFORE changing tile counts (use old tile counts)
     update_all_players_xp(game, clock.unix_timestamp)?;
+    
+    // Check if any player has reached the winning XP limit
+    check_for_winner(game, clock.unix_timestamp)?;
     
     if attacker_won {
         // Attacker wins: defender loses 1 resource per successful attack

@@ -775,6 +775,100 @@ export const IDL: Idl = {
             }
           },
           {
+            "name": "ironTileCountPlayer1",
+            "type": "u8"
+          },
+          {
+            "name": "bronzeTileCountPlayer1",
+            "type": "u8"
+          },
+          {
+            "name": "silverTileCountPlayer1",
+            "type": "u8"
+          },
+          {
+            "name": "goldTileCountPlayer1",
+            "type": "u8"
+          },
+          {
+            "name": "ironTileCountPlayer2",
+            "type": "u8"
+          },
+          {
+            "name": "bronzeTileCountPlayer2",
+            "type": "u8"
+          },
+          {
+            "name": "silverTileCountPlayer2",
+            "type": "u8"
+          },
+          {
+            "name": "goldTileCountPlayer2",
+            "type": "u8"
+          },
+          {
+            "name": "ironTileCountPlayer3",
+            "type": "u8"
+          },
+          {
+            "name": "bronzeTileCountPlayer3",
+            "type": "u8"
+          },
+          {
+            "name": "silverTileCountPlayer3",
+            "type": "u8"
+          },
+          {
+            "name": "goldTileCountPlayer3",
+            "type": "u8"
+          },
+          {
+            "name": "ironTileCountPlayer4",
+            "type": "u8"
+          },
+          {
+            "name": "bronzeTileCountPlayer4",
+            "type": "u8"
+          },
+          {
+            "name": "silverTileCountPlayer4",
+            "type": "u8"
+          },
+          {
+            "name": "goldTileCountPlayer4",
+            "type": "u8"
+          },
+          {
+            "name": "goldTierBonusXpPerMin",
+            "type": "u8"
+          },
+          {
+            "name": "silverTierBonusXpPerMin",
+            "type": "u8"
+          },
+          {
+            "name": "bronzeTierBonusXpPerMin",
+            "type": "u8"
+          },
+          {
+            "name": "ironTierBonusXpPerMin",
+            "type": "u8"
+          },
+          {
+            "name": "_paddingTierBonus",
+            "type": {
+              "array": ["u8", 4]
+            }
+          },
+          {
+            "name": "winningPlayerPubkey",
+            "type": "publicKey"
+          },
+          {
+            "name": "winningXpLimit",
+            "type": "u64"
+          },
+          {
             "name": "gameState",
             "type": "u8"
           },
@@ -795,9 +889,13 @@ export const IDL: Idl = {
             "type": "u8"
           },
           {
+            "name": "winnerCalculationFlag",
+            "type": "u8"
+          },
+          {
             "name": "_padding",
             "type": {
-              "array": ["u8", 3]
+              "array": ["u8", 2]
             }
           }
         ]
@@ -1069,6 +1167,9 @@ export interface GameAccount {
   silverTierBonusXpPerMin?: number;
   bronzeTierBonusXpPerMin?: number;
   ironTierBonusXpPerMin?: number;
+  // Winning player and XP limit
+  winningPlayerPubkey?: PublicKey;
+  winningXpLimit?: number;
 }
 
 export interface GameAccountData {
@@ -1344,8 +1445,23 @@ export class HexoneClient {
       const bronzeTierBonusXpPerMin = data.length > tierBonusXpOffset + 2 ? data.readUInt8(tierBonusXpOffset + 2) : 10;
       const ironTierBonusXpPerMin = data.length > tierBonusXpOffset + 3 ? data.readUInt8(tierBonusXpOffset + 3) : 5;
       
-      // Read game state and other fields (5 bytes)
-      const gameStateOffset = tierBonusXpOffset + 4;
+      // Skip padding (4 bytes) + winning_player_pubkey (32 bytes) + winning_xp_limit (8 bytes)
+      const paddingOffset = tierBonusXpOffset + 4;
+      const winningPlayerPubkeyOffset = paddingOffset + 4;
+      const winningXpLimitOffset = winningPlayerPubkeyOffset + 32;
+      
+      // Read winning player pubkey (32 bytes)
+      const winningPlayerPubkey = data.length > winningPlayerPubkeyOffset 
+        ? new PublicKey(data.slice(winningPlayerPubkeyOffset, winningPlayerPubkeyOffset + 32))
+        : PublicKey.default;
+      
+      // Read winning XP limit (u64, 8 bytes)
+      const winningXpLimit = data.length > winningXpLimitOffset 
+        ? Number(data.readBigUInt64LE(winningXpLimitOffset))
+        : 10000;
+      
+      // Read game state and other fields (6 bytes: game_state, rows, columns, version, bump, winner_calculation_flag)
+      const gameStateOffset = winningXpLimitOffset + 8;
       let gameState = 0;
       let rows = 11;
       let columns = 13;
@@ -1395,7 +1511,9 @@ export class HexoneClient {
         goldTierBonusXpPerMin,
         silverTierBonusXpPerMin,
         bronzeTierBonusXpPerMin,
-        ironTierBonusXpPerMin
+        ironTierBonusXpPerMin,
+        winningPlayerPubkey: winningPlayerPubkey,
+        winningXpLimit: winningXpLimit
       };
     } catch (error) {
       console.error('Error in manual game parsing:', error);
@@ -1413,7 +1531,7 @@ export class HexoneClient {
         return null;
       }
       
-      const expectedSize = 8 + 32*5 + 8*6 + 4*16 + 4 + 144*4 + 16 + 4 + 5 + 3; // 888 (added 20 bytes for tier counts and tier bonus XP)
+      const expectedSize = 8 + 32*5 + 8*6 + 4*16 + 4 + 144*4 + 16 + 4 + 4 + 32 + 8 + 5 + 3; // 932 (added 20 bytes for tier counts/tier bonus XP + 40 bytes for winning player/XP limit)
       const actualSize = accountInfo.data.length;
       
       console.log('Game account data length:', actualSize);
@@ -1496,7 +1614,9 @@ export class HexoneClient {
         goldTierBonusXpPerMin: account.goldTierBonusXpPerMin ?? 100,
         silverTierBonusXpPerMin: account.silverTierBonusXpPerMin ?? 50,
         bronzeTierBonusXpPerMin: account.bronzeTierBonusXpPerMin ?? 10,
-        ironTierBonusXpPerMin: account.ironTierBonusXpPerMin ?? 5
+        ironTierBonusXpPerMin: account.ironTierBonusXpPerMin ?? 5,
+        winningPlayerPubkey: account.winningPlayerPubkey ?? PublicKey.default,
+        winningXpLimit: account.winningXpLimit ?? 10000
       };
     } catch (error) {
       console.error('Error fetching game:', error);
@@ -1740,6 +1860,8 @@ export class HexoneClient {
         return 'In Progress';
       case 2:
         return 'Completed';
+      case 3:
+        return 'Winner Found (Not Paid Out)';
       default:
         return 'Unknown';
     }

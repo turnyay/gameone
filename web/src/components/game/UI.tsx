@@ -37,6 +37,11 @@ const shortenPubkey = (pubkey: string): string => {
   return `${pubkey.slice(0, 4)}...${pubkey.slice(-4)}`;
 };
 
+// Helper function to format numbers with commas
+const formatNumber = (num: number): string => {
+  return num.toLocaleString('en-US');
+};
+
 export const UI: React.FC<UIProps> = ({
   playerColorIndex,
   moveAllResources,
@@ -274,12 +279,12 @@ export const UI: React.FC<UIProps> = ({
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ color: '#888' }}>Total Resources:</span>
-              <span style={{ color: '#ffa500' }}>{simulatedTotalResources}</span>
+              <span style={{ color: '#ffa500' }}>{formatNumber(simulatedTotalResources)}</span>
             </div>
             {currentWallet && gamePlayers.some(player => player && player.publicKey === currentWallet) && (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ color: '#888' }}>My Available:</span>
-                <span style={{ color: '#ffa500' }}>{availableResources}</span>
+                <span style={{ color: '#ffa500' }}>{formatNumber(availableResources)}</span>
               </div>
             )}
           </div>
@@ -310,40 +315,146 @@ export const UI: React.FC<UIProps> = ({
                 )}
               </span>
             </div>
-          </div>
-        </div>
-
-        <div style={{ margin: '50px 0' }}>
-          <h2 style={{ marginBottom: '20px' }}>My Profile</h2>
-          <div style={{ 
-            display: 'flex', 
-            flexDirection: 'column', 
-            gap: '10px',
-            marginBottom: '20px',
-            fontFamily: 'monospace',
-            fontSize: '14px'
-          }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ color: '#888' }}>Player ID:</span>
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                gap: '8px' 
-              }}>
-                <div style={{
-                  width: '12px',
-                  height: '12px',
-                  backgroundColor: `#${getColorFromIndex(playerColorIndex).toString(16).padStart(6, '0')}`,
-                  borderRadius: '2px'
-                }} />
-                <span style={{ color: '#ffa500' }}>7xK9p...mN2vR</span>
-              </div>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ color: '#888' }}>Percent Gameboard:</span>
-              <span style={{ color: '#ffa500' }}>0.73% (1/137)</span>
-            </div>
+            {(() => {
+              const gameData = game as any;
+              const winningXpLimit = gameData?.winningXpLimit || 10000;
+              
+              // Calculate current winner (player with highest simulated XP)
+              const savedXpValues = [
+                gameData?.xpPlayer1 || 0,
+                gameData?.xpPlayer2 || 0,
+                gameData?.xpPlayer3 || 0,
+                gameData?.xpPlayer4 || 0
+              ];
+              const xpTimestamps = [
+                gameData?.xpTimestampPlayer1 || 0,
+                gameData?.xpTimestampPlayer2 || 0,
+                gameData?.xpTimestampPlayer3 || 0,
+                gameData?.xpTimestampPlayer4 || 0
+              ];
+              const tileCounts = [
+                gameData?.tileCountColor1 || 0,
+                gameData?.tileCountColor2 || 0,
+                gameData?.tileCountColor3 || 0,
+                gameData?.tileCountColor4 || 0
+              ];
+              const xpPerMinutePerTile = gameData?.xpPerMinutePerTile || 1;
+              
+              // Get tier counts for bonus XP calculation
+              const tierCounts = [
+                {
+                  gold: gameData?.goldTileCountPlayer1 ?? gameData?.gold_tile_count_player1 ?? 0,
+                  silver: gameData?.silverTileCountPlayer1 ?? gameData?.silver_tile_count_player1 ?? 0,
+                  bronze: gameData?.bronzeTileCountPlayer1 ?? gameData?.bronze_tile_count_player1 ?? 0,
+                  iron: gameData?.ironTileCountPlayer1 ?? gameData?.iron_tile_count_player1 ?? 0
+                },
+                {
+                  gold: gameData?.goldTileCountPlayer2 ?? gameData?.gold_tile_count_player2 ?? 0,
+                  silver: gameData?.silverTileCountPlayer2 ?? gameData?.silver_tile_count_player2 ?? 0,
+                  bronze: gameData?.bronzeTileCountPlayer2 ?? gameData?.bronze_tile_count_player2 ?? 0,
+                  iron: gameData?.ironTileCountPlayer2 ?? gameData?.iron_tile_count_player2 ?? 0
+                },
+                {
+                  gold: gameData?.goldTileCountPlayer3 ?? gameData?.gold_tile_count_player3 ?? 0,
+                  silver: gameData?.silverTileCountPlayer3 ?? gameData?.silver_tile_count_player3 ?? 0,
+                  bronze: gameData?.bronzeTileCountPlayer3 ?? gameData?.bronze_tile_count_player3 ?? 0,
+                  iron: gameData?.ironTileCountPlayer3 ?? gameData?.iron_tile_count_player3 ?? 0
+                },
+                {
+                  gold: gameData?.goldTileCountPlayer4 ?? gameData?.gold_tile_count_player4 ?? 0,
+                  silver: gameData?.silverTileCountPlayer4 ?? gameData?.silver_tile_count_player4 ?? 0,
+                  bronze: gameData?.bronzeTileCountPlayer4 ?? gameData?.bronze_tile_count_player4 ?? 0,
+                  iron: gameData?.ironTileCountPlayer4 ?? gameData?.iron_tile_count_player4 ?? 0
+                }
+              ];
+              
+              const goldXpPerMin = gameData?.goldTierBonusXpPerMin ?? gameData?.gold_tier_bonus_xp_per_min ?? 100;
+              const silverXpPerMin = gameData?.silverTierBonusXpPerMin ?? gameData?.silver_tier_bonus_xp_per_min ?? 50;
+              const bronzeXpPerMin = gameData?.bronzeTierBonusXpPerMin ?? gameData?.bronze_tier_bonus_xp_per_min ?? 10;
+              const ironXpPerMin = gameData?.ironTierBonusXpPerMin ?? gameData?.iron_tier_bonus_xp_per_min ?? 5;
+              
+              const calculateBonusXpPerMin = (tierCount: { gold: number; silver: number; bronze: number; iron: number }) => {
+                return (tierCount.gold * goldXpPerMin) +
+                       (tierCount.silver * silverXpPerMin) +
+                       (tierCount.bronze * bronzeXpPerMin) +
+                       (tierCount.iron * ironXpPerMin);
+              };
+              
+              const bonusXpPerMinValues = tierCounts.map(calculateBonusXpPerMin);
+              
+              const calculateSimulatedXP = (savedXP: number, timestamp: number, tileCount: number, bonusXpPerMin: number) => {
+                const currentTime = Math.floor(Date.now() / 1000);
+                const timeDiff = currentTime - timestamp;
+                if (timeDiff > 60) {
+                  const minutesElapsed = Math.floor(timeDiff / 60);
+                  const xpGained = minutesElapsed * xpPerMinutePerTile * tileCount;
+                  const bonusXpGained = minutesElapsed * bonusXpPerMin;
+                  return savedXP + xpGained + bonusXpGained;
+                }
+                return savedXP;
+              };
+              
+              const simulatedXpValues = [
+                calculateSimulatedXP(savedXpValues[0], xpTimestamps[0], tileCounts[0], bonusXpPerMinValues[0]),
+                calculateSimulatedXP(savedXpValues[1], xpTimestamps[1], tileCounts[1], bonusXpPerMinValues[1]),
+                calculateSimulatedXP(savedXpValues[2], xpTimestamps[2], tileCounts[2], bonusXpPerMinValues[2]),
+                calculateSimulatedXP(savedXpValues[3], xpTimestamps[3], tileCounts[3], bonusXpPerMinValues[3])
+              ];
+              
+              // Find player with highest XP
+              let winnerIndex = -1;
+              let maxXp = -1;
+              simulatedXpValues.forEach((xp, index) => {
+                if (xp > maxXp) {
+                  maxXp = xp;
+                  winnerIndex = index;
+                }
+              });
+              
+              // Check if any player has reached the winning XP limit (simulated)
+              const hasWinner = maxXp >= winningXpLimit;
+              const simulatedGameStatus = hasWinner ? 'Winner Found' : (gameData?.status || 'Unknown');
+              
+              const playerNames = ['Red', 'Yellow', 'Green', 'Blue'];
+              const winnerName = winnerIndex >= 0 ? playerNames[winnerIndex] : null;
+              const winnerColor = winnerIndex >= 0 ? PLAYER_COLORS[winnerIndex] : null;
+              const winnerColorHex = winnerColor ? `#${winnerColor.toString(16).padStart(6, '0')}` : null;
+              const winnerPlayer = winnerIndex >= 0 && gamePlayers[winnerIndex] ? gamePlayers[winnerIndex] : null;
+              const winnerPubkey = winnerPlayer ? winnerPlayer.publicKey : null;
+              
+              return (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span style={{ color: '#888' }}>Game Status:</span>
+                    <span style={{ color: '#ffa500' }}>{simulatedGameStatus}</span>
+                  </div>
+                  {winnerIndex >= 0 && winnerName && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <span style={{ color: '#888' }}>Current Winner:</span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div style={{
+                            width: '12px',
+                            height: '12px',
+                            backgroundColor: winnerColorHex || '#888',
+                            borderRadius: '2px'
+                          }} />
+                          <span style={{ color: '#ffa500' }}>{winnerName}</span>
+                        </div>
+                        {winnerPubkey && (
+                          <span style={{ color: '#666', fontSize: '12px', fontFamily: 'monospace' }}>
+                            {shortenPubkey(winnerPubkey)}
+                          </span>
+                        )}
+                        <span style={{ color: '#ffa500' }}>
+                          {formatNumber(maxXp)} / {formatNumber(winningXpLimit)} XP
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
       </div>
@@ -663,7 +774,7 @@ export const UI: React.FC<UIProps> = ({
                       gap: '2px'
                     }}>
                       <span style={{ color: '#00ff00', fontWeight: 'bold', fontSize: '14px' }}>
-                        {player.simulatedXp}
+                        {formatNumber(player.simulatedXp)}
                       </span>
                     </div>
                     <div style={{ 
@@ -686,8 +797,8 @@ export const UI: React.FC<UIProps> = ({
                           if (tooltip) tooltip.style.display = 'none';
                         }}
                       >
-                      {player.tileCount}
-                    </span>
+                        {formatNumber(player.tileCount)}
+                      </span>
                       <div
                         style={{
                           display: 'none',
@@ -709,7 +820,7 @@ export const UI: React.FC<UIProps> = ({
                       >
                         <div style={{ marginBottom: '4px', fontWeight: 'bold', color: '#ffa500' }}>Base XP/min</div>
                         <div style={{ color: '#ffa500' }}>
-                          {player.tileCount} tiles × {xpPerMinutePerTile} = +{player.tileCount * xpPerMinutePerTile} XP/min
+                          {formatNumber(player.tileCount)} tiles × {formatNumber(xpPerMinutePerTile)} = +{formatNumber(player.tileCount * xpPerMinutePerTile)} XP/min
                         </div>
                       </div>
                     </div>
@@ -734,7 +845,7 @@ export const UI: React.FC<UIProps> = ({
                           if (tooltip) tooltip.style.display = 'none';
                         }}
                       >
-                        {player.bonusXpPerMin}
+                        {formatNumber(player.bonusXpPerMin)}
                       </span>
                       <div
                         style={{
@@ -758,22 +869,22 @@ export const UI: React.FC<UIProps> = ({
                         <div style={{ marginBottom: '4px', fontWeight: 'bold', color: '#ffd700' }}>Tier Bonus XP/min</div>
                         {player.tierCount.gold > 0 && (
                           <div style={{ color: '#ffd700' }}>
-                            {player.tierCount.gold} gold × {player.goldXpPerMin} = +{player.tierCount.gold * player.goldXpPerMin}
+                            {formatNumber(player.tierCount.gold)} gold × {formatNumber(player.goldXpPerMin)} = +{formatNumber(player.tierCount.gold * player.goldXpPerMin)}
                           </div>
                         )}
                         {player.tierCount.silver > 0 && (
                           <div style={{ color: '#c0c0c0' }}>
-                            {player.tierCount.silver} silver × {player.silverXpPerMin} = +{player.tierCount.silver * player.silverXpPerMin}
+                            {formatNumber(player.tierCount.silver)} silver × {formatNumber(player.silverXpPerMin)} = +{formatNumber(player.tierCount.silver * player.silverXpPerMin)}
                           </div>
                         )}
                         {player.tierCount.bronze > 0 && (
                           <div style={{ color: '#8b4513' }}>
-                            {player.tierCount.bronze} bronze × {player.bronzeXpPerMin} = +{player.tierCount.bronze * player.bronzeXpPerMin}
+                            {formatNumber(player.tierCount.bronze)} bronze × {formatNumber(player.bronzeXpPerMin)} = +{formatNumber(player.tierCount.bronze * player.bronzeXpPerMin)}
                           </div>
                         )}
                         {player.tierCount.iron > 0 && (
                           <div style={{ color: '#708090' }}>
-                            {player.tierCount.iron} iron × {player.ironXpPerMin} = +{player.tierCount.iron * player.ironXpPerMin}
+                            {formatNumber(player.tierCount.iron)} iron × {formatNumber(player.ironXpPerMin)} = +{formatNumber(player.tierCount.iron * player.ironXpPerMin)}
                           </div>
                         )}
                         {(player.tierCount.gold === 0 && player.tierCount.silver === 0 && player.tierCount.bronze === 0 && player.tierCount.iron === 0) && (
