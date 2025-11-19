@@ -142,6 +142,28 @@ const Game: React.FC = () => {
     }));
   };
 
+  const handleClaimPrize = async () => {
+    if (!client || !wallet.publicKey || !game) {
+      setError('Wallet not connected or game not loaded');
+      return;
+    }
+
+    try {
+      setError(null);
+      const tx = await client.claimPrize(game.publicKey);
+      console.log('Claim prize transaction:', tx);
+      
+      // Refresh game data after claiming
+      setTimeout(() => {
+        fetchGame();
+      }, 2000);
+    } catch (err) {
+      console.error('Error claiming prize:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to claim prize';
+      setError(errorMessage);
+    }
+  };
+
   const handleAddResources = async (amount: number) => {
     if (!HexTile.selectedTile || availableResources === 0 || !client || !wallet.publicKey || !game || amount <= 0 || amount > availableResources) {
       return;
@@ -1127,6 +1149,7 @@ const Game: React.FC = () => {
           connection={connection}
           programId={PROGRAM_ID}
           game={game}
+          onClaimPrize={handleClaimPrize}
         />
       </div>
 

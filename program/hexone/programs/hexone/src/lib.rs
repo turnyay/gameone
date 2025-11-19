@@ -59,4 +59,8 @@ pub mod hexone {
     ) -> Result<()> {
         instructions::add_resources(ctx, tile_index, resources_to_add)
     }
+
+    pub fn claim_prize(ctx: Context<ClaimPrize>) -> Result<()> {
+        instructions::claim_prize(ctx)
+    }
 }

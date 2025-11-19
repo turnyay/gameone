@@ -29,4 +29,8 @@ pub enum HexoneError {
     /// 6006 - Invalid treasury account
     #[msg("Invalid treasury account")]
     InvalidTreasury,
+
+    /// 6007 - Invalid game state
+    #[msg("Invalid game state")]
+    InvalidGameState,
 }

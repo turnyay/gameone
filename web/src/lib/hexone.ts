@@ -254,6 +254,32 @@ export const IDL: Idl = {
           "type": "u32"
         }
       ]
+    },
+    {
+      "name": "claimPrize",
+      "accounts": [
+        {
+          "name": "wallet",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "game",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "gameTreasury",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": []
     }
   ],
   "accounts": [
@@ -1792,6 +1818,36 @@ export class HexoneClient {
       return tx;
     } catch (error) {
       console.error('Error in resolveAttack:', error);
+      throw error;
+    }
+  }
+
+  async claimPrize(game: PublicKey): Promise<string> {
+    if (!this.provider?.wallet.publicKey) {
+      throw new Error('Wallet not connected');
+    }
+
+    try {
+      // Find game treasury PDA
+      const [treasuryPda] = await PublicKey.findProgramAddress(
+        [Buffer.from('game_treasury'), game.toBuffer()],
+        this.programId
+      );
+
+      const tx = await this.program.methods
+        .claimPrize()
+        .accounts({
+          wallet: this.provider.wallet.publicKey,
+          game: game,
+          gameTreasury: treasuryPda,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      console.log('Claim prize transaction:', tx);
+      return tx;
+    } catch (error) {
+      console.error('Error in claimPrize:', error);
       throw error;
     }
   }

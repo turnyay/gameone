@@ -24,6 +24,7 @@ interface UIProps {
   connection?: Connection;
   programId?: PublicKey;
   game?: any;
+  onClaimPrize?: () => Promise<void>;
 }
 
 const getColorFromIndex = (index: number) => {
@@ -60,7 +61,8 @@ export const UI: React.FC<UIProps> = ({
   gamePda,
   connection,
   programId,
-  game
+  game,
+  onClaimPrize
 }) => {
   const [resourcesToAdd, setResourcesToAdd] = useState(availableResources);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -305,15 +307,141 @@ export const UI: React.FC<UIProps> = ({
               <span style={{ color: '#ffa500' }}>{formatGameIdDisplay()}</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ color: '#888' }}>Game Prize Total:</span>
-              <span style={{ color: '#ffa500' }}>
-                {treasuryBalance !== null ? `${treasuryBalance.toFixed(5)} SOL` : 'Loading...'}
-                {treasuryPubkey && (
-                  <span style={{ color: '#888', fontSize: '12px' }}>
-                    {' '}({shortenPubkey(treasuryPubkey)})
-                  </span>
-                )}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span style={{ color: '#888' }}>Game Prize Total:</span>
+                <span style={{ color: '#ffa500' }}>
+                  {treasuryBalance !== null ? `${treasuryBalance.toFixed(5)} SOL` : 'Loading...'}
+                  {treasuryPubkey && (
+                    <span style={{ color: '#888', fontSize: '12px' }}>
+                      {' '}({shortenPubkey(treasuryPubkey)})
+                    </span>
+                  )}
+                </span>
+                {(() => {
+                  const gameData = game as any;
+                  const winningXpLimit = gameData?.winningXpLimit || 10000;
+                  
+                  // Calculate simulated XP for current player to check if they've reached the limit
+                  const savedXpValues = [
+                    gameData?.xpPlayer1 || 0,
+                    gameData?.xpPlayer2 || 0,
+                    gameData?.xpPlayer3 || 0,
+                    gameData?.xpPlayer4 || 0
+                  ];
+                  const xpTimestamps = [
+                    gameData?.xpTimestampPlayer1 || 0,
+                    gameData?.xpTimestampPlayer2 || 0,
+                    gameData?.xpTimestampPlayer3 || 0,
+                    gameData?.xpTimestampPlayer4 || 0
+                  ];
+                  const tileCounts = [
+                    gameData?.tileCountColor1 || 0,
+                    gameData?.tileCountColor2 || 0,
+                    gameData?.tileCountColor3 || 0,
+                    gameData?.tileCountColor4 || 0
+                  ];
+                  const xpPerMinutePerTile = gameData?.xpPerMinutePerTile || 1;
+                  
+                  // Get tier counts for bonus XP calculation
+                  const tierCounts = [
+                    {
+                      gold: gameData?.goldTileCountPlayer1 ?? gameData?.gold_tile_count_player1 ?? 0,
+                      silver: gameData?.silverTileCountPlayer1 ?? gameData?.silver_tile_count_player1 ?? 0,
+                      bronze: gameData?.bronzeTileCountPlayer1 ?? gameData?.bronze_tile_count_player1 ?? 0,
+                      iron: gameData?.ironTileCountPlayer1 ?? gameData?.iron_tile_count_player1 ?? 0
+                    },
+                    {
+                      gold: gameData?.goldTileCountPlayer2 ?? gameData?.gold_tile_count_player2 ?? 0,
+                      silver: gameData?.silverTileCountPlayer2 ?? gameData?.silver_tile_count_player2 ?? 0,
+                      bronze: gameData?.bronzeTileCountPlayer2 ?? gameData?.bronze_tile_count_player2 ?? 0,
+                      iron: gameData?.ironTileCountPlayer2 ?? gameData?.iron_tile_count_player2 ?? 0
+                    },
+                    {
+                      gold: gameData?.goldTileCountPlayer3 ?? gameData?.gold_tile_count_player3 ?? 0,
+                      silver: gameData?.silverTileCountPlayer3 ?? gameData?.silver_tile_count_player3 ?? 0,
+                      bronze: gameData?.bronzeTileCountPlayer3 ?? gameData?.bronze_tile_count_player3 ?? 0,
+                      iron: gameData?.ironTileCountPlayer3 ?? gameData?.iron_tile_count_player3 ?? 0
+                    },
+                    {
+                      gold: gameData?.goldTileCountPlayer4 ?? gameData?.gold_tile_count_player4 ?? 0,
+                      silver: gameData?.silverTileCountPlayer4 ?? gameData?.silver_tile_count_player4 ?? 0,
+                      bronze: gameData?.bronzeTileCountPlayer4 ?? gameData?.bronze_tile_count_player4 ?? 0,
+                      iron: gameData?.ironTileCountPlayer4 ?? gameData?.iron_tile_count_player4 ?? 0
+                    }
+                  ];
+                  
+                  const goldTierBonusXpPerMin = gameData?.goldTierBonusXpPerMin ?? gameData?.gold_tier_bonus_xp_per_min ?? 100;
+                  const silverTierBonusXpPerMin = gameData?.silverTierBonusXpPerMin ?? gameData?.silver_tier_bonus_xp_per_min ?? 50;
+                  const bronzeTierBonusXpPerMin = gameData?.bronzeTierBonusXpPerMin ?? gameData?.bronze_tier_bonus_xp_per_min ?? 10;
+                  const ironTierBonusXpPerMin = gameData?.ironTierBonusXpPerMin ?? gameData?.iron_tier_bonus_xp_per_min ?? 5;
+                  
+                  // Find current player index
+                  const currentPlayerIndex = gamePlayers.findIndex(p => p && p.publicKey === currentWallet);
+                  
+                  // Calculate simulated XP for current player
+                  let currentPlayerSimulatedXp = 0;
+                  if (currentPlayerIndex >= 0 && currentPlayerIndex < 4) {
+                    const savedXP = savedXpValues[currentPlayerIndex];
+                    const xpTimestamp = xpTimestamps[currentPlayerIndex];
+                    const tileCount = tileCounts[currentPlayerIndex];
+                    const tierCount = tierCounts[currentPlayerIndex];
+                    
+                    const currentTime = Math.floor(Date.now() / 1000);
+                    const timeDiff = currentTime - xpTimestamp;
+                    
+                    if (timeDiff > 60) {
+                      const minutesElapsed = Math.floor(timeDiff / 60);
+                      const xpGained = minutesElapsed * xpPerMinutePerTile * tileCount;
+                      const bonusXpGained = minutesElapsed * (
+                        tierCount.gold * goldTierBonusXpPerMin +
+                        tierCount.silver * silverTierBonusXpPerMin +
+                        tierCount.bronze * bronzeTierBonusXpPerMin +
+                        tierCount.iron * ironTierBonusXpPerMin
+                      );
+                      currentPlayerSimulatedXp = savedXP + xpGained + bonusXpGained;
+                    } else {
+                      currentPlayerSimulatedXp = savedXP;
+                    }
+                  }
+                  
+                  const gameStatus = gameData?.status || '';
+                  const winningPlayerPubkey = gameData?.winningPlayerPubkey;
+                  const isWinner = winningPlayerPubkey && currentWallet && 
+                    winningPlayerPubkey.toString() === currentWallet;
+                  const hasReachedLimit = currentPlayerSimulatedXp >= winningXpLimit;
+                  // Show button if: (status is Winner Found AND user is winner) OR (user has reached limit AND (is winner OR game state hasn't updated yet))
+                  // If game state hasn't updated, show button if they've reached limit (on-chain will verify they're the winner)
+                  const gameStateNotUpdated = !gameStatus.includes('Winner Found');
+                  const canClaim = ((gameStatus.includes('Winner Found') && isWinner) || (hasReachedLimit && (isWinner || gameStateNotUpdated))) && onClaimPrize;
+                  
+                  return canClaim ? (
+                    <button
+                      onClick={async () => {
+                        if (onClaimPrize) {
+                          try {
+                            await onClaimPrize();
+                          } catch (error) {
+                            console.error('Error claiming prize:', error);
+                            alert('Failed to claim prize. Please try again.');
+                          }
+                        }
+                      }}
+                      style={{
+                        backgroundColor: '#ff8800',
+                        color: '#fff',
+                        border: 'none',
+                        padding: '6px 12px',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      Claim Prize
+                    </button>
+                  ) : null;
+                })()}
+              </div>
             </div>
             {(() => {
               const gameData = game as any;
@@ -427,18 +555,18 @@ export const UI: React.FC<UIProps> = ({
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <span style={{ color: '#888' }}>Game Status:</span>
                     <span style={{ color: '#ffa500' }}>{simulatedGameStatus}</span>
-                  </div>
+          </div>
                   {winnerIndex >= 0 && winnerName && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       <span style={{ color: '#888' }}>Current Winner:</span>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <div style={{
-                            width: '12px',
-                            height: '12px',
+                <div style={{
+                  width: '12px',
+                  height: '12px',
                             backgroundColor: winnerColorHex || '#888',
-                            borderRadius: '2px'
-                          }} />
+                  borderRadius: '2px'
+                }} />
                           <span style={{ color: '#ffa500' }}>{winnerName}</span>
                         </div>
                         {winnerPubkey && (
@@ -449,8 +577,8 @@ export const UI: React.FC<UIProps> = ({
                         <span style={{ color: '#ffa500' }}>
                           {formatNumber(maxXp)} / {formatNumber(winningXpLimit)} XP
                         </span>
-                      </div>
-                    </div>
+              </div>
+            </div>
                   )}
                 </>
               );
@@ -466,7 +594,7 @@ export const UI: React.FC<UIProps> = ({
       }}>
         <div style={{ marginBottom: '30px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-            <h2 style={{ marginBottom: '0' }}>Scoreboard</h2>
+          <h2 style={{ marginBottom: '0' }}>Scoreboard</h2>
             <span style={{ 
               fontSize: '12px', 
               color: '#888', 
@@ -846,7 +974,7 @@ export const UI: React.FC<UIProps> = ({
                         }}
                       >
                         {formatNumber(player.bonusXpPerMin)}
-                      </span>
+                        </span>
                       <div
                         style={{
                           display: 'none',

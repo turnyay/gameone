@@ -6,7 +6,7 @@ use crate::error::HexoneError;
 
 pub const GAME_STATE_WAITING: u8 = 0;
 pub const GAME_STATE_IN_PROGRESS: u8 = 1;
-pub const GAME_STATE_COMPLETED: u8 = 2;
+pub const GAME_STATE_COMPLETED: u8 = 2; // Also used for winner found and paid
 pub const GAME_STATE_WINNER_FOUND_NOT_PAID_OUT: u8 = 3;
 
 #[account(zero_copy)]
