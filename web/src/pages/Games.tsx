@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
-import { PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
+import { PublicKey, SystemProgram, Transaction, Keypair } from '@solana/web3.js';
 import { BN } from '@coral-xyz/anchor';
 import { HexoneClient, GameAccount, PROGRAM_ID } from '../lib/hexone';
 import { Buffer } from 'buffer';
@@ -16,6 +16,28 @@ export function longToByteArray(long: number): number[] {
     }
     return byteArray;
 }
+
+// Helper functions for hotwallet management
+const getHotwalletKey = (walletPubkey: string) => `hexone_hotwallet_${walletPubkey}`;
+
+const getOrCreateHotwallet = (walletPubkey: string): Keypair => {
+  const storageKey = getHotwalletKey(walletPubkey);
+  const stored = localStorage.getItem(storageKey);
+  
+  if (stored) {
+    try {
+      const secretKey = JSON.parse(stored);
+      return Keypair.fromSecretKey(Uint8Array.from(secretKey));
+    } catch (err) {
+      console.error('Error parsing stored hotwallet:', err);
+    }
+  }
+  
+  // Generate new hotwallet
+  const hotwallet = Keypair.generate();
+  localStorage.setItem(storageKey, JSON.stringify(Array.from(hotwallet.secretKey)));
+  return hotwallet;
+};
 
 const Games: React.FC = () => {
   const navigate = useNavigate();
@@ -32,6 +54,7 @@ const Games: React.FC = () => {
   const [checkingPlayer, setCheckingPlayer] = useState(false);
   const [creatingGame, setCreatingGame] = useState(false);
   const [treasuryBalances, setTreasuryBalances] = useState<Map<string, number>>(new Map());
+  const [hotwalletBalance, setHotwalletBalance] = useState<number | null>(null);
 
   // Set up HexoneClient - same pattern as SiclubClient
   const client = useMemo(() => {
@@ -92,48 +115,37 @@ const Games: React.FC = () => {
           client.getProgram().programId
         );
 
-        // Get player account data
-        const playerAccountInfo = await connection.getAccountInfo(playerPda);
-        
-        if (!playerAccountInfo) {
+        // Use Anchor's account decoding to fetch player account
+        let playerAccount: any;
+        try {
+          playerAccount = await client.getProgram().account.player.fetch(playerPda);
+        } catch (err) {
+          // Account doesn't exist or failed to decode
           setPlayerAccount(null);
           return;
         }
 
-        // Parse player account data
-        // Structure: 8 bytes discriminator + wallet (32) + name (32) + games_played (4) + games_won (4) + last_game (33) + created_at (8) + player_status (1) + version (1) + bump (1) + padding (5)
-        const data = playerAccountInfo.data.slice(8);
-        
-        const walletPubkey = new PublicKey(data.slice(0, 32));
-        const nameBytes = data.slice(32, 64);
+        // Parse name from bytes
+        const nameBytes = playerAccount.name;
         const name = Buffer.from(nameBytes).toString('utf8').replace(/\0/g, '').trim() || wallet.publicKey.toString().slice(0, 8);
-        const gamesPlayed = data.readUInt32LE(64);
-        const gamesWon = data.readUInt32LE(68);
-        
-        // last_game is Option<Pubkey> - 1 byte flag + 32 bytes pubkey
-        const lastGameFlag = data.readUInt8(72);
-        let lastGame: PublicKey | null = null;
-        if (lastGameFlag === 1) {
-          lastGame = new PublicKey(data.slice(73, 105));
-        }
-        
-        const createdAt = Number(data.readBigInt64LE(105));
-        const playerStatus = data.readUInt8(113);
-        const version = data.readUInt8(114);
-        const bump = data.readUInt8(115);
 
         const playerData = {
           publicKey: playerPda,
-          wallet: walletPubkey,
+          wallet: playerAccount.wallet,
           name,
-          gamesPlayed,
-          gamesWon,
-          lastGame,
-          createdAt,
-          playerStatus,
-          version,
-          bump,
+          gamesPlayed: playerAccount.gamesPlayed || 0,
+          gamesWon: playerAccount.gamesWon || 0,
+          lastGame: playerAccount.lastGame || null,
+          createdAt: playerAccount.createdAt ? Number(playerAccount.createdAt) : 0,
+          playerStatus: playerAccount.playerStatus,
+          version: playerAccount.version,
+          bump: playerAccount.bump,
+          hotwallet: playerAccount.hotwallet,
         };
+
+        // Debug: log the hotwallet
+        console.log('Player account hotwallet:', playerAccount.hotwallet?.toString());
+        console.log('Is default pubkey?', playerAccount.hotwallet?.equals(PublicKey.default));
 
         setPlayerAccount(playerData);
       } catch (err) {
@@ -146,6 +158,35 @@ const Games: React.FC = () => {
 
     checkPlayerAccount();
   }, [wallet.publicKey, connection, client]);
+
+  // Fetch hotwallet balance when player account is loaded
+  useEffect(() => {
+    const fetchHotwalletBalance = async () => {
+      if (!playerAccount?.hotwallet || !connection) {
+        setHotwalletBalance(null);
+        return;
+      }
+
+      try {
+        const balanceLamports = await connection.getBalance(playerAccount.hotwallet);
+        // Convert lamports to SOL - store as number but we'll format on display
+        // Divide by 1e9 to get SOL, keeping full precision
+        const balanceSOL = balanceLamports / 1e9;
+        setHotwalletBalance(balanceSOL);
+      } catch (err) {
+        console.error('Error fetching hotwallet balance:', err);
+        setHotwalletBalance(null);
+      }
+    };
+
+    // Fetch immediately on load
+    if (playerAccount?.hotwallet) {
+      fetchHotwalletBalance();
+    }
+    // Refresh balance every 5 seconds
+    const interval = setInterval(fetchHotwalletBalance, 5000);
+    return () => clearInterval(interval);
+  }, [playerAccount?.hotwallet, connection]);
 
   const fetchPlatformInfo = async () => {
     try {
@@ -393,14 +434,24 @@ const Games: React.FC = () => {
         client.getProgram().programId
       );
 
+      // Get or create hotwallet for this specific wallet address
+      const hotwallet = getOrCreateHotwallet(wallet.publicKey.toString());
+      console.log('Hotwallet pubkey to save:', hotwallet.publicKey.toString());
+      console.log('Hotwallet keypair secret key length:', hotwallet.secretKey.length);
+      
+      // Verify hotwallet is not default
+      if (hotwallet.publicKey.equals(PublicKey.default)) {
+        throw new Error('Generated hotwallet is invalid (default pubkey)');
+      }
+
       // Create name buffer (32 bytes)
       const name = Buffer.alloc(32);
       const playerName = wallet.publicKey.toString().slice(0, 31);
       Buffer.from(playerName).copy(name);
 
       // Call create_player instruction using client
-      const tx = await client.getProgram().methods
-        .createPlayer(Array.from(name))
+      const createPlayerTx = await client.getProgram().methods
+        .createPlayer(Array.from(name), hotwallet.publicKey)
         .accounts({
           wallet: wallet.publicKey,
           platform: platformPda,
@@ -409,9 +460,28 @@ const Games: React.FC = () => {
         })
         .rpc();
 
-      console.log('Create player transaction:', tx);
+      console.log('Create player transaction:', createPlayerTx);
+
+      // Transfer 0.05 SOL to hotwallet for transaction fees
+      const transferAmount = 0.05 * 1e9; // Convert to lamports
+      const transferIx = SystemProgram.transfer({
+        fromPubkey: wallet.publicKey,
+        toPubkey: hotwallet.publicKey,
+        lamports: transferAmount,
+      });
+
+      const transferTx = new Transaction().add(transferIx);
+      const { blockhash } = await connection.getLatestBlockhash();
+      transferTx.recentBlockhash = blockhash;
+      transferTx.feePayer = wallet.publicKey;
+
+      const signedTransferTx = await wallet.signTransaction!(transferTx);
+      const transferTxSignature = await connection.sendRawTransaction(signedTransferTx.serialize());
+      await connection.confirmTransaction(transferTxSignature, 'confirmed');
+
+      console.log('Hotwallet funding transaction:', transferTxSignature);
       setError(null);
-      alert('Player created successfully!');
+      alert('Player created successfully and hotwallet funded with 0.05 SOL!');
       // Wait a bit for the account to be created, then re-check
       setTimeout(() => {
         // Trigger re-check by updating wallet dependency (force re-run of useEffect)
@@ -425,40 +495,32 @@ const Games: React.FC = () => {
               [Buffer.from('player'), wallet.publicKey.toBuffer()],
               client.getProgram().programId
             );
-            const playerAccountInfo = await connection.getAccountInfo(playerPda);
             
-            if (!playerAccountInfo) {
+            // Use Anchor's account decoding
+            let playerAccount: any;
+            try {
+              playerAccount = await client.getProgram().account.player.fetch(playerPda);
+            } catch (err) {
               setPlayerAccount(null);
               return;
             }
 
-            const data = playerAccountInfo.data.slice(8);
-            const walletPubkey = new PublicKey(data.slice(0, 32));
-            const nameBytes = data.slice(32, 64);
+            // Parse name from bytes
+            const nameBytes = playerAccount.name;
             const name = Buffer.from(nameBytes).toString('utf8').replace(/\0/g, '').trim() || wallet.publicKey.toString().slice(0, 8);
-            const gamesPlayed = data.readUInt32LE(64);
-            const gamesWon = data.readUInt32LE(68);
-            const lastGameFlag = data.readUInt8(72);
-            let lastGame: PublicKey | null = null;
-            if (lastGameFlag === 1) {
-              lastGame = new PublicKey(data.slice(73, 105));
-            }
-            const createdAt = Number(data.readBigInt64LE(105));
-            const playerStatus = data.readUInt8(113);
-            const version = data.readUInt8(114);
-            const bump = data.readUInt8(115);
 
             setPlayerAccount({
               publicKey: playerPda,
-              wallet: walletPubkey,
+              wallet: playerAccount.wallet,
               name,
-              gamesPlayed,
-              gamesWon,
-              lastGame,
-              createdAt,
-              playerStatus,
-              version,
-              bump,
+              gamesPlayed: playerAccount.gamesPlayed || 0,
+              gamesWon: playerAccount.gamesWon || 0,
+              lastGame: playerAccount.lastGame || null,
+              createdAt: playerAccount.createdAt ? Number(playerAccount.createdAt) : 0,
+              playerStatus: playerAccount.playerStatus,
+              version: playerAccount.version,
+              bump: playerAccount.bump,
+              hotwallet: playerAccount.hotwallet,
             });
           } catch (err) {
             console.error('Error checking player account:', err);
@@ -693,6 +755,41 @@ const Games: React.FC = () => {
                       </span>
                     </div>
                   </div>
+                  
+                  {/* Hotwallet Section */}
+                  {playerAccount.hotwallet && (
+                    <div style={{ 
+                      marginTop: '20px', 
+                      paddingTop: '20px', 
+                      borderTop: '1px solid #333' 
+                    }}>
+                      <div style={{ 
+                        fontSize: '14px', 
+                        fontWeight: 'bold', 
+                        color: '#f97316',
+                        marginBottom: '12px'
+                      }}>
+                        Hotwallet
+                      </div>
+                      <div style={{ 
+                        fontSize: '12px', 
+                        color: '#888',
+                        fontFamily: 'monospace',
+                        wordBreak: 'break-all',
+                        marginBottom: '8px'
+                      }}>
+                        {playerAccount.hotwallet.toString()}
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+                        <span style={{ color: '#888' }}>Balance:</span>
+                        <span style={{ color: '#ffa500' }}>
+                          {hotwalletBalance !== null 
+                            ? `${hotwalletBalance.toFixed(9).replace(/\.?0+$/, '')} SOL`
+                            : 'Loading...'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (

@@ -1,4 +1,4 @@
-import { Connection, PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
+import { Connection, PublicKey, SystemProgram, Transaction, Keypair } from '@solana/web3.js';
 import { Program, AnchorProvider, Idl, Wallet as AnchorWallet, BN } from '@coral-xyz/anchor';
 import { WalletContextState } from '@solana/wallet-adapter-react';
 import { Hexone } from '../../../program/hexone/target/types/hexone';
@@ -86,6 +86,10 @@ export const IDL: Idl = {
           "type": {
             "array": ["u8", 32]
           }
+        },
+        {
+          "name": "hotwallet",
+          "type": "publicKey"
         }
       ]
     },
@@ -134,7 +138,12 @@ export const IDL: Idl = {
       "name": "moveResources",
       "accounts": [
         {
-          "name": "wallet",
+          "name": "playerWallet",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "signerWallet",
           "isMut": true,
           "isSigner": true
         },
@@ -168,7 +177,12 @@ export const IDL: Idl = {
       "name": "attackTile",
       "accounts": [
         {
-          "name": "wallet",
+          "name": "playerWallet",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "signerWallet",
           "isMut": true,
           "isSigner": true
         },
@@ -208,6 +222,21 @@ export const IDL: Idl = {
       "name": "resolveAttack",
       "accounts": [
         {
+          "name": "playerWallet",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "signerWallet",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "player",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
           "name": "game",
           "isMut": true,
           "isSigner": false
@@ -229,7 +258,12 @@ export const IDL: Idl = {
       "name": "addResources",
       "accounts": [
         {
-          "name": "wallet",
+          "name": "playerWallet",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "signerWallet",
           "isMut": true,
           "isSigner": true
         },
@@ -606,9 +640,13 @@ export const IDL: Idl = {
             "type": "u8"
           },
           {
+            "name": "hotwallet",
+            "type": "publicKey"
+          },
+          {
             "name": "_padding",
             "type": {
-              "array": ["u8", 5]
+              "array": ["u8", 4]
             }
           }
         ]
@@ -1015,9 +1053,13 @@ export const IDL: Idl = {
             "type": "u8"
           },
           {
+            "name": "hotwallet",
+            "type": "publicKey"
+          },
+          {
             "name": "_padding",
             "type": {
-              "array": ["u8", 5]
+              "array": ["u8", 4]
             }
           }
         ]
@@ -1284,6 +1326,7 @@ export class HexoneClient {
   private connection: Connection;
   private provider?: AnchorProvider;
   private programId: PublicKey;
+  private walletContext: WalletContextState;
 
   constructor(
     walletContext: WalletContextState
@@ -1294,6 +1337,8 @@ export class HexoneClient {
     if (!walletContext.publicKey || !walletContext.signTransaction) {
       throw new Error('Wallet not connected or missing required methods');
     }
+
+    this.walletContext = walletContext;
 
     // Create a proper wallet adapter that matches Anchor's expected type
     const anchorWallet = {
@@ -1311,6 +1356,52 @@ export class HexoneClient {
     this.programId = PROGRAM_ID;
     // Use same Program setup as tests: Program with IDL (tests use anchor.workspace.hexone)
     this.program = new Program(IDL, this.programId, this.provider);
+  }
+
+  // Helper to get hotwallet keypair from localStorage
+  private getHotwallet(): Keypair | null {
+    if (!this.walletContext.publicKey) return null;
+    
+    const storageKey = `hexone_hotwallet_${this.walletContext.publicKey.toString()}`;
+    const stored = localStorage.getItem(storageKey);
+    
+    if (stored) {
+      try {
+        const secretKey = JSON.parse(stored);
+        return Keypair.fromSecretKey(Uint8Array.from(secretKey));
+      } catch (err) {
+        console.error('Error parsing stored hotwallet:', err);
+        return null;
+      }
+    }
+    
+    return null;
+  }
+
+  // Helper to get player account and check if hotwallet is valid
+  private async getPlayerAccount(): Promise<{ playerPda: PublicKey; hotwallet: PublicKey | null } | null> {
+    if (!this.provider?.wallet.publicKey) return null;
+
+    try {
+      const [playerPda] = await PublicKey.findProgramAddress(
+        [Buffer.from('player'), this.provider.wallet.publicKey.toBuffer()],
+        this.programId
+      );
+
+      const playerAccount = await this.program.account.player.fetch(playerPda);
+      const hotwallet = (playerAccount as any).hotwallet as PublicKey;
+      
+      // Check if hotwallet is not default
+      const isDefault = hotwallet.equals(PublicKey.default);
+      
+      return {
+        playerPda,
+        hotwallet: isDefault ? null : hotwallet
+      };
+    } catch (err) {
+      console.error('Error fetching player account:', err);
+      return null;
+    }
   }
 
   // Static method to create a read-only client
@@ -1735,11 +1826,22 @@ export class HexoneClient {
     }
 
     try {
-      // Find player PDA
-      const [playerPda] = await PublicKey.findProgramAddress(
-        [Buffer.from('player'), this.provider.wallet.publicKey.toBuffer()],
-        this.programId
-      );
+      // Get player account and hotwallet
+      const playerInfo = await this.getPlayerAccount();
+      if (!playerInfo) {
+        throw new Error('Player account not found');
+      }
+
+      const { playerPda, hotwallet } = playerInfo;
+      const playerWallet = this.provider.wallet.publicKey;
+      
+      // Determine signer: use hotwallet if available and not default, otherwise use wallet
+      const hotwalletKeypair = hotwallet ? this.getHotwallet() : null;
+      // Verify the keypair's public key matches the account's hotwallet
+      const useHotwallet = hotwalletKeypair && hotwallet && 
+        hotwalletKeypair.publicKey.equals(hotwallet) && 
+        !hotwallet.equals(PublicKey.default);
+      const signerWallet = useHotwallet ? hotwallet : playerWallet;
 
       // Ensure values are within u16 range (0-65535)
       const sourceTileIndexU16 = Math.max(0, Math.min(65535, sourceTileIndex));
@@ -1750,23 +1852,44 @@ export class HexoneClient {
         sourceTileIndex: sourceTileIndexU16,
         destinationTileIndex: destinationTileIndexU16,
         resourcesToMove: resourcesToMoveU16,
-        original: { sourceTileIndex, destinationTileIndex, resourcesToMove }
+        usingHotwallet: useHotwallet,
+        signerWallet: signerWallet.toString()
       });
 
-      // Call move_resources - @coral-xyz/anchor handles snake_case method names
-      // All parameters are now u16: source_tile_index, destination_tile_index, resources_to_move
-      const tx = await this.program.methods
+      // Build instruction
+      const instruction = await this.program.methods
         .moveResources(
           sourceTileIndex,
           destinationTileIndex,
           resourcesToMove
         )
         .accounts({
-          wallet: this.provider.wallet.publicKey,
+          playerWallet: playerWallet,
+          signerWallet: signerWallet,
           player: playerPda,
           game: game,
         })
-        .rpc();
+        .instruction();
+
+      // Create transaction
+      const transaction = new Transaction().add(instruction);
+      const { blockhash } = await this.connection.getLatestBlockhash();
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = signerWallet;
+
+      // Sign transaction
+      if (useHotwallet && hotwalletKeypair) {
+        // Sign with hotwallet (no popup needed)
+        transaction.sign(hotwalletKeypair);
+      } else {
+        // Sign with wallet (will show popup)
+        const signed = await this.provider.wallet.signTransaction(transaction);
+        transaction.signatures = signed.signatures;
+      }
+
+      // Send transaction
+      const tx = await this.connection.sendRawTransaction(transaction.serialize());
+      await this.connection.confirmTransaction(tx, 'confirmed');
 
       console.log('Move resources transaction:', tx);
       return tx;
@@ -1786,11 +1909,22 @@ export class HexoneClient {
     }
 
     try {
-      // Find player PDA
-      const [playerPda] = await PublicKey.findProgramAddress(
-        [Buffer.from('player'), this.provider.wallet.publicKey.toBuffer()],
-        this.programId
-      );
+      // Get player account and hotwallet
+      const playerInfo = await this.getPlayerAccount();
+      if (!playerInfo) {
+        throw new Error('Player account not found');
+      }
+
+      const { playerPda, hotwallet } = playerInfo;
+      const playerWallet = this.provider.wallet.publicKey;
+      
+      // Determine signer: use hotwallet if available and not default, otherwise use wallet
+      const hotwalletKeypair = hotwallet ? this.getHotwallet() : null;
+      // Verify the keypair's public key matches the account's hotwallet
+      const useHotwallet = hotwalletKeypair && hotwallet && 
+        hotwalletKeypair.publicKey.equals(hotwallet) && 
+        !hotwallet.equals(PublicKey.default);
+      const signerWallet = useHotwallet ? hotwallet : playerWallet;
 
       // Find defender PDA
       const defenderTileBuffer = Buffer.alloc(2);
@@ -1808,19 +1942,48 @@ export class HexoneClient {
       const attackerTileIndexU16 = Math.max(0, Math.min(65535, attackerTileIndex));
       const defenderTileIndexU16 = Math.max(0, Math.min(65535, defenderTileIndex));
 
-      const tx = await this.program.methods
+      console.log('Calling attackTile with:', {
+        attackerTileIndex: attackerTileIndexU16,
+        defenderTileIndex: defenderTileIndexU16,
+        usingHotwallet: useHotwallet,
+        signerWallet: signerWallet.toString()
+      });
+
+      // Build instruction
+      const instruction = await this.program.methods
         .attackTile(
           attackerTileIndexU16,
           defenderTileIndexU16
         )
         .accounts({
-          wallet: this.provider.wallet.publicKey,
+          playerWallet: playerWallet,
+          signerWallet: signerWallet,
           player: playerPda,
           game: game,
           defender: defenderPda,
           systemProgram: SystemProgram.programId,
         })
-        .rpc();
+        .instruction();
+
+      // Create transaction
+      const transaction = new Transaction().add(instruction);
+      const { blockhash } = await this.connection.getLatestBlockhash();
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = signerWallet;
+
+      // Sign transaction
+      if (useHotwallet && hotwalletKeypair) {
+        // Sign with hotwallet (no popup needed)
+        transaction.sign(hotwalletKeypair);
+      } else {
+        // Sign with wallet (will show popup)
+        const signed = await this.provider.wallet.signTransaction(transaction);
+        transaction.signatures = signed.signatures;
+      }
+
+      // Send transaction
+      const tx = await this.connection.sendRawTransaction(transaction.serialize());
+      await this.connection.confirmTransaction(tx, 'confirmed');
 
       console.log('Attack tile transaction:', tx);
       return tx;
@@ -1840,6 +2003,23 @@ export class HexoneClient {
     }
 
     try {
+      // Get player account and hotwallet
+      const playerInfo = await this.getPlayerAccount();
+      if (!playerInfo) {
+        throw new Error('Player account not found');
+      }
+
+      const { playerPda, hotwallet } = playerInfo;
+      const playerWallet = this.provider.wallet.publicKey;
+      
+      // Determine signer: use hotwallet if available and not default, otherwise use wallet
+      const hotwalletKeypair = hotwallet ? this.getHotwallet() : null;
+      // Verify the keypair's public key matches the account's hotwallet
+      const useHotwallet = hotwalletKeypair && hotwallet && 
+        hotwalletKeypair.publicKey.equals(hotwallet) && 
+        !hotwallet.equals(PublicKey.default);
+      const signerWallet = useHotwallet ? hotwallet : playerWallet;
+
       // Find defender PDA
       const defenderTileBuffer = Buffer.alloc(2);
       defenderTileBuffer.writeUInt16LE(defenderTileIndex, 0);
@@ -1852,14 +2032,44 @@ export class HexoneClient {
         this.programId
       );
 
-      const tx = await this.program.methods
+      console.log('Calling resolveAttack with:', {
+        defenderTileIndex,
+        usingHotwallet: useHotwallet,
+        signerWallet: signerWallet.toString()
+      });
+
+      // Build instruction
+      const instruction = await this.program.methods
         .resolveAttack()
         .accounts({
+          playerWallet: playerWallet,
+          signerWallet: signerWallet,
+          player: playerPda,
           game: game,
           defender: defenderPda,
           destination: destination,
         })
-        .rpc();
+        .instruction();
+
+      // Create transaction
+      const transaction = new Transaction().add(instruction);
+      const { blockhash } = await this.connection.getLatestBlockhash();
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = signerWallet;
+
+      // Sign transaction
+      if (useHotwallet && hotwalletKeypair) {
+        // Sign with hotwallet (no popup needed)
+        transaction.sign(hotwalletKeypair);
+      } else {
+        // Sign with wallet (will show popup)
+        const signed = await this.provider.wallet.signTransaction(transaction);
+        transaction.signatures = signed.signatures;
+      }
+
+      // Send transaction
+      const tx = await this.connection.sendRawTransaction(transaction.serialize());
+      await this.connection.confirmTransaction(tx, 'confirmed');
 
       console.log('Resolve attack transaction:', tx);
       return tx;

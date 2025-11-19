@@ -15,7 +15,8 @@ pub struct Player {
     pub player_status: u8,       // 1 = ready, 2 = playing
     pub version: u8,             // For future upgrades
     pub bump: u8,                // PDA bump
-    pub _padding: [u8; 5],      // padding for alignment
+    pub hotwallet: Pubkey,       // Client-side hot wallet for transactions
+    pub _padding: [u8; 4],      // padding for alignment
 }
 
 impl Player {
@@ -29,5 +30,6 @@ impl Player {
         + 1                      // player_status
         + 1                      // version
         + 1                      // bump
-        + 5;                     // padding
+        + 32                     // hotwallet
+        + 4;                     // padding
 } 

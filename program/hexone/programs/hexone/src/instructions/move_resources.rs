@@ -261,7 +261,6 @@ pub(crate) fn move_resources(
     resources_to_move: u16,
 ) -> Result<()> {
     let game = &mut ctx.accounts.game.load_mut()?;
-    let wallet_key = ctx.accounts.wallet.key();
 
     // Check game state
     require!(
@@ -270,13 +269,15 @@ pub(crate) fn move_resources(
     );
 
     // Check if player is in the game and determine their color and index
-    let (player_color, player_index) = if game.player1 == wallet_key {
+    // Use the player's wallet key (not the signer key) to find them in the game
+    let player_wallet_key = ctx.accounts.player.wallet;
+    let (player_color, player_index) = if game.player1 == player_wallet_key {
         (1u8, 1usize) // Red
-    } else if game.player2 == wallet_key {
+    } else if game.player2 == player_wallet_key {
         (2u8, 2usize) // Yellow
-    } else if game.player3 == wallet_key {
+    } else if game.player3 == player_wallet_key {
         (3u8, 3usize) // Green
-    } else if game.player4 == wallet_key {
+    } else if game.player4 == player_wallet_key {
         (4u8, 4usize) // Blue
     } else {
         return Err(HexoneError::PlayerNotAuthorized.into());
@@ -404,14 +405,19 @@ pub(crate) fn move_resources(
 
 #[derive(Accounts)]
 pub struct MoveResources<'info> {
+    /// CHECK: The player's wallet (used for PDA derivation, not necessarily the signer)
+    pub player_wallet: UncheckedAccount<'info>,
+
+    /// CHECK: Signer must be either player's wallet or player's hotwallet
     #[account(mut)]
-    pub wallet: Signer<'info>,
+    pub signer_wallet: Signer<'info>,
 
     #[account(
         mut,
-        seeds = [b"player", wallet.key().as_ref()],
+        seeds = [b"player", player_wallet.key().as_ref()],
         bump = player.bump,
-        constraint = player.wallet == wallet.key() @ HexoneError::PlayerNotAuthorized
+        constraint = player.wallet == player_wallet.key() @ HexoneError::PlayerNotAuthorized,
+        constraint = (signer_wallet.key() == player.wallet || signer_wallet.key() == player.hotwallet) @ HexoneError::PlayerNotAuthorized
     )]
     pub player: Account<'info, Player>,
 

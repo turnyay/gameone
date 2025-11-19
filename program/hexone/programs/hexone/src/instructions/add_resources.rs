@@ -204,14 +204,19 @@ fn update_all_players_xp(game: &mut Game, current_time: i64) -> Result<()> {
 
 #[derive(Accounts)]
 pub struct AddResources<'info> {
+    /// CHECK: The player's wallet (used for PDA derivation, not necessarily the signer)
+    pub player_wallet: UncheckedAccount<'info>,
+
+    /// CHECK: Signer must be either player's wallet or player's hotwallet
     #[account(mut)]
-    pub wallet: Signer<'info>,
+    pub signer_wallet: Signer<'info>,
 
     #[account(
         mut,
-        seeds = [b"player", wallet.key().as_ref()],
+        seeds = [b"player", player_wallet.key().as_ref()],
         bump = player.bump,
-        constraint = player.wallet == wallet.key() @ HexoneError::PlayerNotAuthorized,
+        constraint = player.wallet == player_wallet.key() @ HexoneError::PlayerNotAuthorized,
+        constraint = (signer_wallet.key() == player.wallet || signer_wallet.key() == player.hotwallet) @ HexoneError::PlayerNotAuthorized,
         constraint = player.player_status == PLAYER_STATUS_PLAYING @ HexoneError::PlayerNotAuthorized
     )]
     pub player: Account<'info, Player>,
@@ -226,7 +231,7 @@ pub fn add_resources(
     resources_to_add: u32,
 ) -> Result<()> {
     let game = &mut ctx.accounts.game.load_mut()?;
-    let wallet_key = ctx.accounts.wallet.key();
+    let wallet_key = ctx.accounts.player_wallet.key();
     let clock = Clock::get()?;
     let current_time = clock.unix_timestamp;
 

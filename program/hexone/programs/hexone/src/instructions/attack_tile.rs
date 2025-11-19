@@ -13,7 +13,7 @@ pub fn attack_tile(
     defender_tile_index: u16,
 ) -> Result<()> {
     let game = &ctx.accounts.game.load()?;
-    let wallet_key = ctx.accounts.wallet.key();
+    let wallet_key = ctx.accounts.player_wallet.key();
     let clock = Clock::get()?;
 
     // Check game state
@@ -101,14 +101,19 @@ pub fn attack_tile(
 #[derive(Accounts)]
 #[instruction(attacker_tile_index: u16, defender_tile_index: u16)]
 pub struct AttackTile<'info> {
+    /// CHECK: The player's wallet (used for PDA derivation, not necessarily the signer)
+    pub player_wallet: UncheckedAccount<'info>,
+
+    /// CHECK: Signer must be either player's wallet or player's hotwallet
     #[account(mut)]
-    pub wallet: Signer<'info>,
+    pub signer_wallet: Signer<'info>,
 
     #[account(
         mut,
-        seeds = [b"player", wallet.key().as_ref()],
+        seeds = [b"player", player_wallet.key().as_ref()],
         bump = player.bump,
-        constraint = player.wallet == wallet.key() @ HexoneError::PlayerNotAuthorized
+        constraint = player.wallet == player_wallet.key() @ HexoneError::PlayerNotAuthorized,
+        constraint = (signer_wallet.key() == player.wallet || signer_wallet.key() == player.hotwallet) @ HexoneError::PlayerNotAuthorized
     )]
     pub player: Account<'info, Player>,
 
@@ -117,7 +122,7 @@ pub struct AttackTile<'info> {
 
     #[account(
         init,
-        payer = wallet,
+        payer = signer_wallet,
         space = Defender::LEN,
         seeds = [
             b"defender",

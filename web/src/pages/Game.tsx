@@ -2,7 +2,7 @@ import React, { useEffect, useCallback, useState, useRef, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
-import { PublicKey, SystemProgram } from '@solana/web3.js';
+import { PublicKey, SystemProgram, Keypair, Transaction } from '@solana/web3.js';
 import { BN } from '@coral-xyz/anchor';
 import { Buffer } from 'buffer';
 import { HexoneClient, GameAccount, PROGRAM_ID } from '../lib/hexone';
@@ -269,15 +269,64 @@ const Game: React.FC = () => {
         client.getProgram().programId
       );
 
-      // Send add_resources transaction
-      const tx = await client.getProgram().methods
+      // Get player account to check hotwallet
+      const playerAccount = await client.getProgram().account.player.fetch(playerPda);
+      const hotwallet = (playerAccount as any).hotwallet as PublicKey;
+      const isDefaultHotwallet = hotwallet.equals(PublicKey.default);
+      
+      // Get hotwallet keypair if available
+      const storageKey = `hexone_hotwallet_${wallet.publicKey.toString()}`;
+      const stored = localStorage.getItem(storageKey);
+      let hotwalletKeypair: Keypair | null = null;
+      if (stored && !isDefaultHotwallet) {
+        try {
+          const secretKey = JSON.parse(stored);
+          hotwalletKeypair = Keypair.fromSecretKey(Uint8Array.from(secretKey));
+          // Verify the keypair's public key matches the account's hotwallet
+          if (!hotwalletKeypair.publicKey.equals(hotwallet)) {
+            console.warn('Hotwallet keypair does not match account hotwallet');
+            hotwalletKeypair = null;
+          }
+        } catch (err) {
+          console.error('Error parsing stored hotwallet:', err);
+        }
+      }
+
+      const useHotwallet = hotwalletKeypair && !isDefaultHotwallet && 
+        hotwalletKeypair.publicKey.equals(hotwallet);
+      const signerWallet = useHotwallet ? hotwallet : wallet.publicKey;
+
+      // Build instruction
+      const instruction = await client.getProgram().methods
         .addResources(selectedTileIndex, new BN(resourcesToAdd))
         .accounts({
-          wallet: wallet.publicKey,
+          playerWallet: wallet.publicKey,
+          signerWallet: signerWallet,
           player: playerPda,
           game: game.publicKey,
         })
-        .rpc();
+        .instruction();
+
+      // Create transaction
+      const transaction = new Transaction().add(instruction);
+      const { blockhash } = await connection.getLatestBlockhash();
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = signerWallet;
+
+      // Sign transaction
+      let signedTransaction: Transaction;
+      if (useHotwallet && hotwalletKeypair) {
+        // Sign with hotwallet (no popup needed)
+        transaction.sign(hotwalletKeypair);
+        signedTransaction = transaction;
+      } else {
+        // Sign with wallet (will show popup)
+        signedTransaction = await wallet.signTransaction!(transaction);
+      }
+
+      // Send transaction
+      const tx = await connection.sendRawTransaction(signedTransaction.serialize());
+      await connection.confirmTransaction(tx, 'confirmed');
 
       console.log('Add resources transaction:', tx);
       

@@ -21,7 +21,12 @@
       ],
       "accounts": [
         {
-          "name": "wallet",
+          "name": "player_wallet",
+          "writable": false,
+          "signer": false
+        },
+        {
+          "name": "signer_wallet",
           "writable": true,
           "signer": true
         },
@@ -43,7 +48,7 @@
               },
               {
                 "kind": "account",
-                "path": "wallet"
+                "path": "player_wallet"
               }
             ]
           }
@@ -137,7 +142,12 @@
       ],
       "accounts": [
         {
-          "name": "wallet",
+          "name": "player_wallet",
+          "writable": false,
+          "signer": false
+        },
+        {
+          "name": "signer_wallet",
           "writable": true,
           "signer": true
         },
@@ -159,7 +169,7 @@
               },
               {
                 "kind": "account",
-                "path": "wallet"
+                "path": "player_wallet"
               }
             ]
           }
@@ -404,6 +414,10 @@
               32
             ]
           }
+        },
+        {
+          "name": "hotwallet",
+          "type": "publicKey"
         }
       ]
     },
@@ -528,7 +542,12 @@
       ],
       "accounts": [
         {
-          "name": "wallet",
+          "name": "player_wallet",
+          "writable": false,
+          "signer": false
+        },
+        {
+          "name": "signer_wallet",
           "writable": true,
           "signer": true
         },
@@ -550,7 +569,7 @@
               },
               {
                 "kind": "account",
-                "path": "wallet"
+                "path": "player_wallet"
               }
             ]
           }
@@ -588,6 +607,39 @@
         209
       ],
       "accounts": [
+        {
+          "name": "player_wallet",
+          "writable": false,
+          "signer": false
+        },
+        {
+          "name": "signer_wallet",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "player",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  121,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player_wallet"
+              }
+            ]
+          }
+        },
         {
           "name": "game",
           "writable": true
@@ -1142,11 +1194,15 @@
             "type": "u8"
           },
           {
+            "name": "hotwallet",
+            "type": "pubkey"
+          },
+          {
             "name": "_padding",
             "type": {
               "array": [
                 "u8",
-                5
+                4
               ]
             }
           }

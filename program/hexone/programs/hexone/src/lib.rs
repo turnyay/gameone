@@ -25,8 +25,8 @@ pub mod hexone {
         instructions::create_platform(ctx)
     }
 
-    pub fn create_player(ctx: Context<CreatePlayer>, name: [u8; 32]) -> Result<()> {
-        instructions::create_player(ctx, name)
+    pub fn create_player(ctx: Context<CreatePlayer>, name: [u8; 32], hotwallet: Pubkey) -> Result<()> {
+        instructions::create_player(ctx, name, hotwallet)
     }
 
     pub fn join_game(ctx: Context<JoinGame>, game_id: u64) -> Result<()> {

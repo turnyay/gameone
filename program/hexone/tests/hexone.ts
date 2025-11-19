@@ -17,6 +17,12 @@ describe("hexone", () => {
   const program = anchor.workspace.hexone as Program<Hexone>;
   const provider = anchor.getProvider();
 
+  // Global variables for hotwallets (set in Create Players test)
+  let hotwallet1: Keypair;
+  let hotwallet2: Keypair;
+  let hotwallet3: Keypair;
+  let hotwallet4: Keypair;
+
   // Helper function to log tier counts for all players
   const logTierCounts = async (gamePDA: PublicKey, label: string = "Tier Counts") => {
     try {
@@ -207,13 +213,14 @@ describe("hexone", () => {
       const createPlayer = async (
         wallet: Keypair,
         playerPDA: PublicKey,
-        playerName: string
+        playerName: string,
+        hotwallet: PublicKey
       ): Promise<string> => {
         const name = Buffer.alloc(32);
         Buffer.from(playerName).copy(name);
 
         const tx = await program.methods
-          .createPlayer(name)
+          .createPlayer(name, hotwallet)
           .accounts({
             wallet: wallet.publicKey,
             platform: platformPDA,
@@ -244,12 +251,18 @@ describe("hexone", () => {
         PROGRAM_ID
       );
 
+      // Create hotwallets for each player (client-side hot wallets)
+      hotwallet1 = Keypair.generate();
+      hotwallet2 = Keypair.generate();
+      hotwallet3 = Keypair.generate();
+      hotwallet4 = Keypair.generate();
+
       // Create all players
       const txs = await Promise.all([
-        createPlayer(player1, player1PDA, "Player One"),
-        createPlayer(player2, player2PDA, "Player Two"),
-        createPlayer(player3, player3PDA, "Player Three"),
-        createPlayer(player4, player4PDA, "Player Four"),
+        createPlayer(player1, player1PDA, "Player One", hotwallet1.publicKey),
+        createPlayer(player2, player2PDA, "Player Two", hotwallet2.publicKey),
+        createPlayer(player3, player3PDA, "Player Three", hotwallet3.publicKey),
+        createPlayer(player4, player4PDA, "Player Four", hotwallet4.publicKey),
       ]);
 
       txs.forEach((tx, index) => {
@@ -269,13 +282,211 @@ describe("hexone", () => {
       expect(player1Account.wallet.toBase58()).to.equal(player1.publicKey.toBase58());
       expect(Buffer.from(player1Account.name).toString().replace(/\0/g, '')).to.equal("Player One");
       expect(player1Account.playerStatus).to.equal(1); // READY
+      expect(player1Account.hotwallet.toBase58()).to.equal(hotwallet1.publicKey.toBase58());
 
       // Verify player 4
       expect(player4Account.wallet.toBase58()).to.equal(player4.publicKey.toBase58());
       expect(Buffer.from(player4Account.name).toString().replace(/\0/g, '')).to.equal("Player Four");
       expect(player4Account.playerStatus).to.equal(1); // READY
+      expect(player4Account.hotwallet.toBase58()).to.equal(hotwallet4.publicKey.toBase58());
     } catch (error) {
       console.error("Error creating players:", error);
+      throw error;
+    }
+  });
+
+  it("Hotwallet Signing Test", async () => {
+    try {
+      // First, create a game and join players so we can test game actions
+      const [testGamePDA] = PublicKey.findProgramAddressSync(
+        [Buffer.from("GAME-"), Buffer.alloc(8)],
+        PROGRAM_ID
+      );
+
+      // Get platform game count
+      const platform = await program.account.platform.fetch(platformPDA);
+      const gameCount = Number(platform.gameCount);
+      
+      const gameCountBuffer = Buffer.alloc(8);
+      gameCountBuffer.writeBigUInt64LE(BigInt(gameCount), 0);
+      const [newGamePDA] = PublicKey.findProgramAddressSync(
+        [Buffer.from("GAME-"), gameCountBuffer],
+        PROGRAM_ID
+      );
+
+      // Create a new game
+      await program.methods
+        .createGame()
+        .accounts({
+          admin: player1.publicKey,
+          platform: platformPDA,
+          game: newGamePDA,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([player1])
+        .rpc();
+
+      // Join game with player1
+      const [gameTreasuryPDA] = PublicKey.findProgramAddressSync(
+        [Buffer.from("game_treasury"), newGamePDA.toBuffer()],
+        PROGRAM_ID
+      );
+
+      // Join all 4 players so the game goes into IN_PROGRESS state
+      await program.methods
+        .joinGame(new anchor.BN(gameCount))
+        .accounts({
+          wallet: player1.publicKey,
+          player: player1PDA,
+          platform: platformPDA,
+          game: newGamePDA,
+          gameTreasury: gameTreasuryPDA,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([player1])
+        .rpc();
+
+      await program.methods
+        .joinGame(new anchor.BN(gameCount))
+        .accounts({
+          wallet: player2.publicKey,
+          player: player2PDA,
+          platform: platformPDA,
+          game: newGamePDA,
+          gameTreasury: gameTreasuryPDA,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([player2])
+        .rpc();
+
+      await program.methods
+        .joinGame(new anchor.BN(gameCount))
+        .accounts({
+          wallet: player3.publicKey,
+          player: player3PDA,
+          platform: platformPDA,
+          game: newGamePDA,
+          gameTreasury: gameTreasuryPDA,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([player3])
+        .rpc();
+
+      await program.methods
+        .joinGame(new anchor.BN(gameCount))
+        .accounts({
+          wallet: player4.publicKey,
+          player: player4PDA,
+          platform: platformPDA,
+          game: newGamePDA,
+          gameTreasury: gameTreasuryPDA,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([player4])
+        .rpc();
+
+      // Wait a bit for game state to update
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Fund hotwallets with SOL so they can sign transactions
+      const hotwalletFunding = 1 * anchor.web3.LAMPORTS_PER_SOL;
+      await provider.connection.requestAirdrop(hotwallet1.publicKey, hotwalletFunding);
+      await provider.connection.requestAirdrop(hotwallet2.publicKey, hotwalletFunding);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Get initial game state - player1 starts at tile 0 with 100 resources
+      // Player1 (Red) is at tile 0, we'll move resources from tile 0 to an adjacent tile
+      // Tile 0 is at (0,0), adjacent tiles are at index 1 (0,1) or 13 (1,0)
+      // Let's move from tile 0 to tile 1 (adjacent)
+      
+      // Test 1: Use player1's hotwallet to sign move_resources (should succeed)
+      console.log("Test 1: Using player1's hotwallet to sign move_resources...");
+      try {
+        await program.methods
+          .moveResources(0, 1, 50) // Move 50 resources from tile 0 to tile 1
+          .accounts({
+            playerWallet: player1.publicKey,
+            signerWallet: hotwallet1.publicKey,
+            player: player1PDA,
+            game: newGamePDA,
+          })
+          .signers([hotwallet1])
+          .rpc();
+        console.log("✓ Test 1 passed: player1's hotwallet can sign move_resources");
+      } catch (error: any) {
+        console.error("✗ Test 1 failed:", error.message);
+        throw error;
+      }
+
+      // Test 2: Try to use player2's hotwallet to sign for player1 (should fail)
+      console.log("Test 2: Trying to use player2's hotwallet to sign for player1...");
+      try {
+        await program.methods
+          .moveResources(0, 1, 10)
+          .accounts({
+            playerWallet: player1.publicKey,
+            signerWallet: hotwallet2.publicKey,
+            player: player1PDA,
+            game: newGamePDA,
+          })
+          .signers([hotwallet2])
+          .rpc();
+        throw new Error("Test 2 should have failed but didn't");
+      } catch (error: any) {
+        if (error.message.includes("PlayerNotAuthorized") || error.message.includes("constraint")) {
+          console.log("✓ Test 2 passed: player2's hotwallet correctly rejected for player1");
+        } else {
+          console.error("✗ Test 2 failed with unexpected error:", error.message);
+          throw error;
+        }
+      }
+
+      // Test 3: Use player1's regular wallet (should still work)
+      console.log("Test 3: Using player1's regular wallet to sign move_resources...");
+      try {
+        await program.methods
+          .moveResources(0, 1, 10)
+          .accounts({
+            playerWallet: player1.publicKey,
+            signerWallet: player1.publicKey,
+            player: player1PDA,
+            game: newGamePDA,
+          })
+          .signers([player1])
+          .rpc();
+        console.log("✓ Test 3 passed: player1's regular wallet can still sign");
+      } catch (error: any) {
+        console.error("✗ Test 3 failed:", error.message);
+        throw error;
+      }
+
+      // Test 4: Try to use a random keypair that's not a hotwallet (should fail)
+      console.log("Test 4: Trying to use a random keypair to sign for player1...");
+      const randomKeypair = Keypair.generate();
+      try {
+        await program.methods
+          .moveResources(0, 1, 10)
+          .accounts({
+            playerWallet: player1.publicKey,
+            signerWallet: randomKeypair.publicKey,
+            player: player1PDA,
+            game: newGamePDA,
+          })
+          .signers([randomKeypair])
+          .rpc();
+        throw new Error("Test 4 should have failed but didn't");
+      } catch (error: any) {
+        if (error.message.includes("PlayerNotAuthorized") || error.message.includes("constraint")) {
+          console.log("✓ Test 4 passed: random keypair correctly rejected");
+        } else {
+          console.error("✗ Test 4 failed with unexpected error:", error.message);
+          throw error;
+        }
+      }
+
+      console.log("\n✓ All hotwallet signing tests passed!");
+    } catch (error) {
+      console.error("Error in hotwallet signing test:", error);
       throw error;
     }
   });
@@ -383,7 +594,8 @@ describe("hexone", () => {
           const tx = await program.methods
             .moveResources(currentTile, nextTile, resourcesToMove)
             .accounts({
-              wallet: player1.publicKey,
+              playerWallet: player1.publicKey,
+              signerWallet: player1.publicKey,
               player: player1PDA,
               game: gamePDA,
             })
@@ -485,7 +697,8 @@ describe("hexone", () => {
         const attackTx = await program.methods
           .attackTile(attackerTileIndex, defenderTileIndex)
           .accounts({
-            wallet: player1.publicKey,
+            playerWallet: player1.publicKey,
+            signerWallet: player1.publicKey,
             player: player1PDA,
             game: gamePDA,
             defender: defenderPDA,
@@ -534,10 +747,14 @@ describe("hexone", () => {
         const resolveTx = await program.methods
           .resolveAttack()
           .accounts({
+            playerWallet: player1.publicKey,
+            signerWallet: player1.publicKey,
+            player: player1PDA,
             game: gamePDA,
             defender: defenderPDA,
             destination: gamePDA, // Rent goes back to game account
           })
+          .signers([player1])
           .rpc();
         
         console.log(`Resolve round ${attackRound} tx:`, resolveTx);
@@ -699,7 +916,8 @@ describe("hexone", () => {
             const tx = await program.methods
               .moveResources(currentTile, nextTile, resourcesToMove)
               .accounts({
-                wallet: player3.publicKey,
+                playerWallet: player3.publicKey,
+                signerWallet: player3.publicKey,
                 player: player3PDA,
                 game: gamePDA,
               })
@@ -811,7 +1029,8 @@ describe("hexone", () => {
       const tx1 = await program.methods
         .addResources(startingTiles.player1, new anchor.BN(resourcesToAdd))
         .accounts({
-          wallet: player1.publicKey,
+          playerWallet: player1.publicKey,
+          signerWallet: player1.publicKey,
           player: player1PDA,
           game: gamePDA,
         })
@@ -825,7 +1044,8 @@ describe("hexone", () => {
       const tx2 = await program.methods
         .addResources(startingTiles.player2, new anchor.BN(resourcesToAdd))
         .accounts({
-          wallet: player2.publicKey,
+          playerWallet: player2.publicKey,
+          signerWallet: player2.publicKey,
           player: player2PDA,
           game: gamePDA,
         })
@@ -839,7 +1059,8 @@ describe("hexone", () => {
       const tx3 = await program.methods
         .addResources(startingTiles.player3, new anchor.BN(resourcesToAdd))
         .accounts({
-          wallet: player3.publicKey,
+          playerWallet: player3.publicKey,
+          signerWallet: player3.publicKey,
           player: player3PDA,
           game: gamePDA,
         })
@@ -853,7 +1074,8 @@ describe("hexone", () => {
       const tx4 = await program.methods
         .addResources(startingTiles.player4, new anchor.BN(resourcesToAdd))
         .accounts({
-          wallet: player4.publicKey,
+          playerWallet: player4.publicKey,
+          signerWallet: player4.publicKey,
           player: player4PDA,
           game: gamePDA,
         })

@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 use crate::state::game::{Game, GAME_STATE_IN_PROGRESS, get_tile_tier, update_tier_count_on_gain, update_tier_count_on_loss, calculate_tier_bonus_xp, check_for_winner};
 use crate::state::defender::Defender;
+use crate::state::player::Player;
 use crate::error::HexoneError;
 use crate::events::AttackResolved;
 use sha2::{Sha256, Digest};
@@ -211,6 +212,21 @@ pub fn resolve_attack(ctx: Context<ResolveAttack>) -> Result<()> {
     let game = &mut ctx.accounts.game.load_mut()?;
     let defender = &mut ctx.accounts.defender;
     let clock = Clock::get()?;
+
+    // Verify the signer is the attacker (player who initiated the attack)
+    // Find the attacker's wallet by matching the attacker_tile_color to the game players
+    let attacker_wallet = match defender.attacker_tile_color {
+        1 => game.player1,
+        2 => game.player2,
+        3 => game.player3,
+        4 => game.player4,
+        _ => return Err(HexoneError::Invalid.into()),
+    };
+    
+    require!(
+        ctx.accounts.player_wallet.key() == attacker_wallet,
+        HexoneError::PlayerNotAuthorized
+    );
 
     // Check game state
     require!(
@@ -485,6 +501,22 @@ pub fn resolve_attack(ctx: Context<ResolveAttack>) -> Result<()> {
 
 #[derive(Accounts)]
 pub struct ResolveAttack<'info> {
+    /// CHECK: The attacker's wallet (used for PDA derivation, not necessarily the signer)
+    pub player_wallet: UncheckedAccount<'info>,
+
+    /// CHECK: Signer must be either attacker's wallet or attacker's hotwallet
+    #[account(mut)]
+    pub signer_wallet: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"player", player_wallet.key().as_ref()],
+        bump = player.bump,
+        constraint = player.wallet == player_wallet.key() @ HexoneError::PlayerNotAuthorized,
+        constraint = (signer_wallet.key() == player.wallet || signer_wallet.key() == player.hotwallet) @ HexoneError::PlayerNotAuthorized
+    )]
+    pub player: Account<'info, Player>,
+
     #[account(mut)]
     pub game: AccountLoader<'info, Game>,
 

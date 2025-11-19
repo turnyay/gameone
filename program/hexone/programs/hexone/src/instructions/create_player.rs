@@ -26,7 +26,7 @@ pub struct CreatePlayer<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn create_player(ctx: Context<CreatePlayer>, name: [u8; 32]) -> Result<()> {
+pub fn create_player(ctx: Context<CreatePlayer>, name: [u8; 32], hotwallet: Pubkey) -> Result<()> {
     let player = &mut ctx.accounts.player;
     player.wallet = ctx.accounts.wallet.key();
     player.name = name;
@@ -34,7 +34,8 @@ pub fn create_player(ctx: Context<CreatePlayer>, name: [u8; 32]) -> Result<()> {
     player.last_game = None;
     player.version = 1;
     player.bump = ctx.bumps.player;
-    player._padding = [0; 5];
+    player.hotwallet = hotwallet;
+    player._padding = [0; 4];
 
     // Increment total players count
     ctx.accounts.platform.total_players += 1;
