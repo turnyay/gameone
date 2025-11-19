@@ -23,6 +23,7 @@ interface AttackPopupProps {
   newDefenderResources?: number;
   attackerRollResult?: number; // 0-999
   defenderRollResult?: number; // 0-999
+  hitResourceCount?: number; // Number of resources lost
 }
 
 const getColorName = (colorIndex: number): string => {
@@ -94,7 +95,8 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
   newAttackerResources,
   newDefenderResources,
   attackerRollResult,
-  defenderRollResult
+  defenderRollResult,
+  hitResourceCount
 }) => {
   const [timeRemaining, setTimeRemaining] = useState(3);
   const [canResolve, setCanResolve] = useState(false);
@@ -250,16 +252,21 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
             )}
             <div style={{ minHeight: '26px', marginTop: '4px' }}>
               {showResult && attackerWon === false && newAttackerResources !== undefined && (
-                <div
-                  style={{
-                    color: '#ff0000',
-                    fontSize: '18px',
-                    fontWeight: 'bold',
-                    animation: 'fadeIn 0.5s'
-                  }}
-                >
-                  -1
-                </div>
+                (() => {
+                  const actualLoss = attackerResources - (newAttackerResources ?? attackerResources);
+                  return actualLoss > 0 ? (
+                    <div
+                      style={{
+                        color: '#ff0000',
+                        fontSize: '18px',
+                        fontWeight: 'bold',
+                        animation: 'fadeIn 0.5s'
+                      }}
+                    >
+                      -{actualLoss}
+                    </div>
+                  ) : null;
+                })()
               )}
             </div>
           </div>
@@ -295,16 +302,21 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
             )}
             <div style={{ minHeight: '26px', marginTop: '4px' }}>
               {showResult && attackerWon === true && newDefenderResources !== undefined && (
-                <div
-                  style={{
-                    color: '#ff0000',
-                    fontSize: '18px',
-                    fontWeight: 'bold',
-                    animation: 'fadeIn 0.5s'
-                  }}
-                >
-                  -1
-                </div>
+                (() => {
+                  const actualLoss = defenderResources - (newDefenderResources ?? defenderResources);
+                  return actualLoss > 0 ? (
+                    <div
+                      style={{
+                        color: '#ff0000',
+                        fontSize: '18px',
+                        fontWeight: 'bold',
+                        animation: 'fadeIn 0.5s'
+                      }}
+                    >
+                      -{actualLoss}
+                    </div>
+                  ) : null;
+                })()
               )}
             </div>
           </div>

@@ -84,8 +84,11 @@ pub struct Game {
     pub bump: u8,
     // Flag to indicate if limit has been reached and winner should be calculated
     pub winner_calculation_flag: u8,
-    // 2 bytes of padding to align to 8 bytes
-    pub _padding: [u8; 2]
+    // Attack hit calculation parameters
+    pub max_hit_threshold: u16,        // Difference threshold (default 500)
+    pub max_hit_resource_count: u8,    // Max resources lost (default 5)
+    // 7 bytes of padding to align to 8 bytes
+    pub _padding: [u8; 7]
 }
 
 /// Calculate the tier (ring distance) of a tile from the center
@@ -587,7 +590,9 @@ impl Game {
         + 32                     // winning_player_pubkey
         + 8                      // winning_xp_limit
         + 6                      // game_state + rows + columns + version + bump + winner_calculation_flag
-        + 2;                     // padding to align to 8 bytes
+        + 2                      // max_hit_threshold (u16)
+        + 1                      // max_hit_resource_count (u8)
+        + 7;                     // padding to align to 8 bytes
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Pod, Zeroable)]

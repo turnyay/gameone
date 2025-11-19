@@ -675,15 +675,6 @@ export const UI: React.FC<UIProps> = ({
               // Get XP and tile count data from game
               const gameData = game as any;
               
-              // Log game data to debug tier counts
-              console.log('Game data:', gameData);
-              console.log('Player 3 (Green) tier counts:', {
-                gold: gameData?.goldTileCountPlayer3,
-                silver: gameData?.silverTileCountPlayer3,
-                bronze: gameData?.bronzeTileCountPlayer3,
-                iron: gameData?.ironTileCountPlayer3
-              });
-              
               const savedXpValues = [
                 gameData?.xpPlayer1 || 0,
                 gameData?.xpPlayer2 || 0,
@@ -732,16 +723,11 @@ export const UI: React.FC<UIProps> = ({
                 }
               ];
               
-              // Log tier counts for all players
-              console.log('Tier counts for all players:', tierCounts);
-              
               // Get tier bonus XP per minute values - try both camelCase and snake_case
               const goldXpPerMin = gameData?.goldTierBonusXpPerMin ?? gameData?.gold_tier_bonus_xp_per_min ?? 100;
               const silverXpPerMin = gameData?.silverTierBonusXpPerMin ?? gameData?.silver_tier_bonus_xp_per_min ?? 50;
               const bronzeXpPerMin = gameData?.bronzeTierBonusXpPerMin ?? gameData?.bronze_tier_bonus_xp_per_min ?? 10;
               const ironXpPerMin = gameData?.ironTierBonusXpPerMin ?? gameData?.iron_tier_bonus_xp_per_min ?? 5;
-              
-              console.log('Tier bonus XP per min:', { goldXpPerMin, silverXpPerMin, bronzeXpPerMin, ironXpPerMin });
               
               // Calculate bonus XP per minute for each player
               const calculateBonusXpPerMin = (tierCount: { gold: number; silver: number; bronze: number; iron: number }, playerIndex: number) => {
@@ -749,18 +735,10 @@ export const UI: React.FC<UIProps> = ({
                        (tierCount.silver * silverXpPerMin) +
                        (tierCount.bronze * bronzeXpPerMin) +
                        (tierCount.iron * ironXpPerMin);
-                console.log(`Player ${playerIndex + 1} bonus calculation:`, {
-                  gold: `${tierCount.gold} * ${goldXpPerMin} = ${tierCount.gold * goldXpPerMin}`,
-                  silver: `${tierCount.silver} * ${silverXpPerMin} = ${tierCount.silver * silverXpPerMin}`,
-                  bronze: `${tierCount.bronze} * ${bronzeXpPerMin} = ${tierCount.bronze * bronzeXpPerMin}`,
-                  iron: `${tierCount.iron} * ${ironXpPerMin} = ${tierCount.iron * ironXpPerMin}`,
-                  total: bonus
-                });
                 return bonus;
               };
               
               const bonusXpPerMinValues = tierCounts.map((tc, idx) => calculateBonusXpPerMin(tc, idx));
-              console.log('Final bonus XP per min values:', bonusXpPerMinValues);
               
               const gameStatus = gameData?.status || '';
               const isGameCompleted = gameStatus.includes('Winner Found') || gameStatus.includes('Game Completed') || gameStatus.includes('Completed');

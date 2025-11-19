@@ -142,6 +142,10 @@ pub fn create_game(ctx: Context<CreateGame>) -> Result<()> {
     game.winning_xp_limit = 10_000; // Default to 10,000 XP
     game.winner_calculation_flag = 0; // Flag to track if winner calculation has been triggered
 
+    // Initialize attack hit calculation parameters
+    game.max_hit_threshold = 500;        // Difference threshold for max hit
+    game.max_hit_resource_count = 5;     // Max resources lost on a hit
+
     // Increment platform game count
     platform.game_count += 1;
     

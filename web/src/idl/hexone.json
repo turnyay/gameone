@@ -21,9 +21,7 @@
       ],
       "accounts": [
         {
-          "name": "player_wallet",
-          "writable": false,
-          "signer": false
+          "name": "player_wallet"
         },
         {
           "name": "signer_wallet",
@@ -70,65 +68,6 @@
       ]
     },
     {
-      "name": "claim_prize",
-      "discriminator": [
-        157,
-        233,
-        139,
-        121,
-        246,
-        62,
-        234,
-        235
-      ],
-      "accounts": [
-        {
-          "name": "wallet",
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "game",
-          "writable": true
-        },
-        {
-          "name": "game_treasury",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  103,
-                  97,
-                  109,
-                  101,
-                  95,
-                  116,
-                  114,
-                  101,
-                  97,
-                  115,
-                  117,
-                  114,
-                  121
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "game"
-              }
-            ]
-          }
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": []
-    },
-    {
       "name": "attack_tile",
       "discriminator": [
         238,
@@ -142,9 +81,7 @@
       ],
       "accounts": [
         {
-          "name": "player_wallet",
-          "writable": false,
-          "signer": false
+          "name": "player_wallet"
         },
         {
           "name": "signer_wallet",
@@ -222,6 +159,65 @@
           "type": "u16"
         }
       ]
+    },
+    {
+      "name": "claim_prize",
+      "discriminator": [
+        157,
+        233,
+        139,
+        121,
+        246,
+        62,
+        234,
+        235
+      ],
+      "accounts": [
+        {
+          "name": "wallet",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "game",
+          "writable": true
+        },
+        {
+          "name": "game_treasury",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101,
+                  95,
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "game"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
     },
     {
       "name": "create_game",
@@ -417,7 +413,7 @@
         },
         {
           "name": "hotwallet",
-          "type": "publicKey"
+          "type": "pubkey"
         }
       ]
     },
@@ -542,9 +538,7 @@
       ],
       "accounts": [
         {
-          "name": "player_wallet",
-          "writable": false,
-          "signer": false
+          "name": "player_wallet"
         },
         {
           "name": "signer_wallet",
@@ -608,9 +602,7 @@
       ],
       "accounts": [
         {
-          "name": "player_wallet",
-          "writable": false,
-          "signer": false
+          "name": "player_wallet"
         },
         {
           "name": "signer_wallet",
@@ -736,6 +728,34 @@
       ]
     }
   ],
+  "events": [
+    {
+      "name": "AttackResolved",
+      "discriminator": [
+        88,
+        71,
+        203,
+        233,
+        103,
+        133,
+        16,
+        123
+      ]
+    },
+    {
+      "name": "GameStarted",
+      "discriminator": [
+        222,
+        247,
+        78,
+        255,
+        61,
+        184,
+        156,
+        41
+      ]
+    }
+  ],
   "errors": [
     {
       "code": 6000,
@@ -771,9 +791,50 @@
       "code": 6006,
       "name": "InvalidTreasury",
       "msg": "Invalid treasury account"
+    },
+    {
+      "code": 6007,
+      "name": "InvalidGameState",
+      "msg": "Invalid game state"
     }
   ],
   "types": [
+    {
+      "name": "AttackResolved",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "attacker_tile_color",
+            "type": "u8"
+          },
+          {
+            "name": "attacker_resources",
+            "type": "u16"
+          },
+          {
+            "name": "attacker_roll_result",
+            "type": "u16"
+          },
+          {
+            "name": "defender_tile_color",
+            "type": "u8"
+          },
+          {
+            "name": "defender_resources",
+            "type": "u16"
+          },
+          {
+            "name": "defender_roll_result",
+            "type": "u16"
+          },
+          {
+            "name": "hit_resource_count",
+            "type": "u8"
+          }
+        ]
+      }
+    },
     {
       "name": "Defender",
       "type": {
@@ -962,83 +1023,83 @@
             }
           },
           {
-            "name": "ironTileCountPlayer1",
+            "name": "iron_tile_count_player1",
             "type": "u8"
           },
           {
-            "name": "bronzeTileCountPlayer1",
+            "name": "bronze_tile_count_player1",
             "type": "u8"
           },
           {
-            "name": "silverTileCountPlayer1",
+            "name": "silver_tile_count_player1",
             "type": "u8"
           },
           {
-            "name": "goldTileCountPlayer1",
+            "name": "gold_tile_count_player1",
             "type": "u8"
           },
           {
-            "name": "ironTileCountPlayer2",
+            "name": "iron_tile_count_player2",
             "type": "u8"
           },
           {
-            "name": "bronzeTileCountPlayer2",
+            "name": "bronze_tile_count_player2",
             "type": "u8"
           },
           {
-            "name": "silverTileCountPlayer2",
+            "name": "silver_tile_count_player2",
             "type": "u8"
           },
           {
-            "name": "goldTileCountPlayer2",
+            "name": "gold_tile_count_player2",
             "type": "u8"
           },
           {
-            "name": "ironTileCountPlayer3",
+            "name": "iron_tile_count_player3",
             "type": "u8"
           },
           {
-            "name": "bronzeTileCountPlayer3",
+            "name": "bronze_tile_count_player3",
             "type": "u8"
           },
           {
-            "name": "silverTileCountPlayer3",
+            "name": "silver_tile_count_player3",
             "type": "u8"
           },
           {
-            "name": "goldTileCountPlayer3",
+            "name": "gold_tile_count_player3",
             "type": "u8"
           },
           {
-            "name": "ironTileCountPlayer4",
+            "name": "iron_tile_count_player4",
             "type": "u8"
           },
           {
-            "name": "bronzeTileCountPlayer4",
+            "name": "bronze_tile_count_player4",
             "type": "u8"
           },
           {
-            "name": "silverTileCountPlayer4",
+            "name": "silver_tile_count_player4",
             "type": "u8"
           },
           {
-            "name": "goldTileCountPlayer4",
+            "name": "gold_tile_count_player4",
             "type": "u8"
           },
           {
-            "name": "goldTierBonusXpPerMin",
+            "name": "gold_tier_bonus_xp_per_min",
             "type": "u8"
           },
           {
-            "name": "silverTierBonusXpPerMin",
+            "name": "silver_tier_bonus_xp_per_min",
             "type": "u8"
           },
           {
-            "name": "bronzeTierBonusXpPerMin",
+            "name": "bronze_tier_bonus_xp_per_min",
             "type": "u8"
           },
           {
-            "name": "ironTierBonusXpPerMin",
+            "name": "iron_tier_bonus_xp_per_min",
             "type": "u8"
           },
           {
@@ -1083,13 +1144,33 @@
             "type": "u8"
           },
           {
+            "name": "max_hit_threshold",
+            "type": "u16"
+          },
+          {
+            "name": "max_hit_resource_count",
+            "type": "u8"
+          },
+          {
             "name": "_padding",
             "type": {
               "array": [
                 "u8",
-                2
+                7
               ]
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "GameStarted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "game_id",
+            "type": "u64"
           }
         ]
       }

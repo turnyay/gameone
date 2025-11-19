@@ -57,6 +57,7 @@ const Game: React.FC = () => {
     newDefenderResources: number;
     attackerRollResult?: number;
     defenderRollResult?: number;
+    hitResourceCount?: number;
   } | null>(null);
   const [liveFeedMessages, setLiveFeedMessages] = useState<Array<{ time: Date; message: string }>>([]);
   
@@ -737,6 +738,7 @@ const Game: React.FC = () => {
                 const data = event.data as any;
                 const gameId = data.gameId ?? data.game_id;
                 const message = `Game #${gameId} has started!`;
+                console.log(`[GAME STARTED] ${message}`);
                 setLiveFeedMessages(prev => [...prev, { time: new Date(), message }]);
                 break;
               }
@@ -1324,26 +1326,61 @@ const Game: React.FC = () => {
           }
           attackerRollResult={attackResult?.attackerRollResult}
           defenderRollResult={attackResult?.defenderRollResult}
+          hitResourceCount={attackResult?.hitResourceCount}
           onResolveAttack={async () => {
             if (!client || !wallet.publicKey || !game || !attackData) {
               throw new Error('Wallet not connected or game not loaded');
             }
 
             try {
-              // Resolve attack - use wallet as destination for rent
+              // Determine destination for rent: use hotwallet if it's being used as signer, otherwise use main wallet
+              let destinationWallet = wallet.publicKey;
+              
+              try {
+                // Get player account to check hotwallet
+                const [playerPda] = await PublicKey.findProgramAddress(
+                  [Buffer.from('player'), wallet.publicKey.toBuffer()],
+                  client.getProgram().programId
+                );
+                const playerAccount = await client.getProgram().account.player.fetch(playerPda);
+                const hotwallet = (playerAccount as any).hotwallet as PublicKey;
+                const isDefaultHotwallet = hotwallet.equals(PublicKey.default);
+                
+                // Check if hotwallet keypair exists and matches
+                const storageKey = `hexone_hotwallet_${wallet.publicKey.toString()}`;
+                const stored = localStorage.getItem(storageKey);
+                if (stored && !isDefaultHotwallet) {
+                  const hotwalletKeypair = Keypair.fromSecretKey(
+                    Uint8Array.from(JSON.parse(stored))
+                  );
+                  // If hotwallet is being used (matches the account's hotwallet), use it as destination
+                  if (hotwalletKeypair.publicKey.equals(hotwallet)) {
+                    destinationWallet = hotwallet;
+                    console.log('[RESOLVE ATTACK] Using hotwallet as destination for rent:', hotwallet.toString());
+                  }
+                }
+              } catch (err) {
+                console.warn('Could not fetch player account for hotwallet check, using main wallet:', err);
+              }
+              
+              // Resolve attack - use hotwallet as destination if it's being used, otherwise use main wallet
               const tx = await client.resolveAttack(
                 game.publicKey,
                 attackData.defenderTileIndex,
-                wallet.publicKey
+                destinationWallet
               );
 
               // Wait for transaction confirmation
               await connection.confirmTransaction(tx);
+              
+              // Small delay to ensure on-chain state is updated
+              await new Promise(resolve => setTimeout(resolve, 500));
 
               // Parse transaction to get events and attack result
               let attackerWon: boolean | null = null;
               let attackerRollResult: number | undefined;
               let defenderRollResult: number | undefined;
+              let hitResourceCount: number | undefined;
               
               try {
                 const transaction = await connection.getTransaction(tx, {
@@ -1357,22 +1394,74 @@ const Game: React.FC = () => {
                     const eventParser = new EventParser(PROGRAM_ID, client.program.coder);
                     const events = Array.from(eventParser.parseLogs(transaction.meta?.logMessages || []));
                     
-                    console.log('Parsed events:', events);
+                    console.log(`[EVENTS] Parsed ${events.length} event(s) from transaction`);
                     
                     for (const event of events) {
-                      console.log('Event:', event.name, event.data);
+                      console.log(`[EVENT] ${event.name}:`, event.data);
+                      
                       if (event.name === 'AttackResolved') {
                         const data = event.data as any;
-                        console.log('AttackResolved event data:', data);
+                        // Log all fields in the event data to debug
+                        console.log(`[ATTACK RESOLVED] Full event data:`, data);
+                        console.log(`[ATTACK RESOLVED] All keys in event data:`, Object.keys(data));
+                        console.log(`[ATTACK RESOLVED] hitResourceCount (camelCase):`, data.hitResourceCount);
+                        console.log(`[ATTACK RESOLVED] hit_resource_count (snake_case):`, data.hit_resource_count);
+                        
                         // Try both snake_case and camelCase field names
                         attackerRollResult = data.attackerRollResult ?? data.attacker_roll_result;
                         defenderRollResult = data.defenderRollResult ?? data.defender_roll_result;
+                        
+                        // Determine winner from roll results (needed for fallback calculation)
+                        if (attackerRollResult !== undefined && defenderRollResult !== undefined) {
+                          attackerWon = attackerRollResult > defenderRollResult;
+                        }
+                        
+                        // Parse hit_resource_count
+                        hitResourceCount = data.hitResourceCount ?? data.hit_resource_count;
+                        console.log(`[ATTACK RESOLVED] Parsed hitResourceCount:`, hitResourceCount);
+                        
+                        // Warn if hit_resource_count is missing (indicates old program version)
+                        if (hitResourceCount === undefined) {
+                          console.warn(`[ATTACK RESOLVED] WARNING: hit_resource_count field is missing from event. The on-chain program needs to be redeployed with the updated event structure.`);
+                          // Calculate hit count as fallback based on roll difference
+                          if (attackerRollResult !== undefined && defenderRollResult !== undefined) {
+                            const difference = Math.abs(attackerRollResult - defenderRollResult);
+                            const maxHitThreshold = 500; // Default from game account
+                            const maxHitResourceCount = 5; // Default from game account
+                            const calculatedHit = difference >= maxHitThreshold 
+                              ? maxHitResourceCount 
+                              : Math.floor((difference * maxHitResourceCount) / maxHitThreshold);
+                            const loserResources = attackerWon 
+                              ? (data.defenderResources ?? data.defender_resources ?? 0)
+                              : (data.attackerResources ?? data.attacker_resources ?? 0);
+                            hitResourceCount = calculatedHit >= loserResources ? loserResources : calculatedHit;
+                            console.log(`[ATTACK RESOLVED] Calculated fallback hitResourceCount:`, hitResourceCount);
+                          }
+                        }
+                        
                         // Determine winner from roll results
                         if (attackerRollResult !== undefined && defenderRollResult !== undefined) {
                           attackerWon = attackerRollResult > defenderRollResult;
-                          console.log('Roll results:', attackerRollResult, 'vs', defenderRollResult, 'Winner:', attackerWon ? 'Attacker' : 'Defender');
                         }
+                        
+                        // Log AttackResolved event details
+                        const attackerColor = ['Red', 'Yellow', 'Green', 'Blue'][(data.attackerTileColor ?? data.attacker_tile_color ?? 1) - 1] || 'Unknown';
+                        const defenderColor = ['Red', 'Yellow', 'Green', 'Blue'][(data.defenderTileColor ?? data.defender_tile_color ?? 1) - 1] || 'Unknown';
+                        console.log(`[ATTACK RESOLVED] ${attackerColor} (${attackerRollResult}) vs ${defenderColor} (${defenderRollResult}) - ${attackerWon ? attackerColor + ' WINS' : defenderColor + ' WINS'} | Hit: ${hitResourceCount ?? 'NOT FOUND'} resources`);
+                        console.log(`[ATTACK RESOLVED] Details:`, {
+                          attacker: { color: attackerColor, resources: data.attackerResources ?? data.attacker_resources, roll: attackerRollResult },
+                          defender: { color: defenderColor, resources: data.defenderResources ?? data.defender_resources, roll: defenderRollResult },
+                          hitResourceCount: hitResourceCount ?? 'NOT FOUND',
+                          hitResourceCountFromData: data.hitResourceCount,
+                          hit_resource_countFromData: data.hit_resource_count,
+                          winner: attackerWon ? attackerColor : defenderColor,
+                          fullEventData: data
+                        });
                         break;
+                      } else if (event.name === 'GameStarted') {
+                        const data = event.data as any;
+                        const gameId = data.gameId ?? data.game_id;
+                        console.log(`[GAME STARTED] Game #${gameId} has started!`);
                       }
                     }
                   } catch (eventError) {
@@ -1448,6 +1537,27 @@ const Game: React.FC = () => {
                 const newDefenderResources = updatedGame.tileData[attackData.defenderTileIndex]?.resourceCount || 0;
                 const newDefenderColor = updatedGame.tileData[attackData.defenderTileIndex]?.color || 0;
                 
+                // Calculate actual resource changes from on-chain state
+                const attackerResourceChange = attackData.attackerResources - newAttackerResources;
+                const defenderResourceChange = attackData.defenderResources - newDefenderResources;
+                
+                // Use actual resource changes instead of event hit count (event might be from old program version)
+                // The actual on-chain state is the source of truth
+                const actualAttackerLoss = attackerResourceChange > 0 ? attackerResourceChange : 0;
+                const actualDefenderLoss = defenderResourceChange > 0 ? defenderResourceChange : 0;
+                
+                // Update hitResourceCount to reflect actual on-chain changes
+                const actualHitCount = actualAttackerLoss > 0 ? actualAttackerLoss : actualDefenderLoss;
+                
+                console.log(`[RESOURCE CHANGES] Attacker: ${attackData.attackerResources} → ${newAttackerResources} (change: ${attackerResourceChange > 0 ? '-' : '+'}${Math.abs(attackerResourceChange)})`);
+                console.log(`[RESOURCE CHANGES] Defender: ${attackData.defenderResources} → ${newDefenderResources} (change: ${defenderResourceChange > 0 ? '-' : '+'}${Math.abs(defenderResourceChange)})`);
+                console.log(`[RESOURCE CHANGES] Expected hit from event: ${hitResourceCount ?? 'unknown'}, Actual attacker loss: ${actualAttackerLoss}, Actual defender loss: ${actualDefenderLoss}, Using actual hit: ${actualHitCount}`);
+                
+                // Override hitResourceCount with actual on-chain value
+                if (actualHitCount > 0) {
+                  hitResourceCount = actualHitCount;
+                }
+                
                 // If we couldn't parse logs, determine winner based on game state changes:
                 // 1. If defender tile color changed to attacker's color, attacker won
                 // 2. If defender resources decreased, attacker won
@@ -1474,7 +1584,8 @@ const Game: React.FC = () => {
                   newAttackerResources,
                   newDefenderResources,
                   attackerRollResult,
-                  defenderRollResult
+                  defenderRollResult,
+                  hitResourceCount
                 });
                 
                 // Add attack result message to live feed

@@ -304,7 +304,67 @@ pub fn resolve_attack(ctx: Context<ResolveAttack>) -> Result<()> {
     let attacker_resources_before = game.tile_data[attacker_tile_idx].resource_count;
     let defender_resources_before = game.tile_data[defender_tile_idx].resource_count;
     
-    // Emit event with attacker and defender tile colors, resources, and roll results
+    // Determine winner (higher number wins)
+    let attacker_won = attacker_value > defender_value;
+    defender.attacker_won = attacker_won;
+    defender.is_attack_resolved = true;
+    
+    // Calculate the difference between results (0-999)
+    let difference = if attacker_won {
+        attacker_value - defender_value
+    } else {
+        defender_value - attacker_value
+    };
+    
+    // Calculate hit amount based on difference
+    // Minimum hit is always 1, maximum is max_hit_resource_count (5)
+    // Prorate from 1 to max_hit_resource_count based on difference
+    let max_hit_threshold = game.max_hit_threshold as u64;
+    let max_hit_resource_count = game.max_hit_resource_count as u64;
+    
+    let calculated_hit = if difference >= max_hit_threshold {
+        // Maximum hit when difference >= threshold
+        max_hit_resource_count
+    } else {
+        // Prorate from 1 to max_hit_resource_count
+        // Formula: 1 + ((difference * (max_hit_resource_count - 1)) / max_hit_threshold)
+        // This ensures minimum of 1 and scales up to max_hit_resource_count
+        let prorated = (difference * (max_hit_resource_count - 1)) / max_hit_threshold;
+        let result = 1 + prorated;
+        // Ensure result is at least 1 (safety check for edge cases)
+        result.max(1)
+    };
+    
+    // Determine loser's current resources
+    let loser_resources = if attacker_won {
+        defender_resources_before as u64
+    } else {
+        attacker_resources_before as u64
+    };
+    
+    // Ensure minimum hit is 1 (loser must always lose at least 1)
+    // If loser has fewer resources than calculated hit, use their resources (but at least 1)
+    let hit_resource_count = if calculated_hit >= loser_resources {
+        // Use all loser's resources (will trigger tile transfer)
+        // But ensure at least 1 is lost if they have any resources
+        if loser_resources > 0 {
+            loser_resources
+        } else {
+            1 // Fallback: if somehow they have 0, still lose 1 (shouldn't happen)
+        }
+    } else {
+        // Use calculated hit, which is already at least 1 from the formula
+        calculated_hit
+    };
+    
+    // Final safety check: ensure hit_resource_count is always at least 1
+    // This is CRITICAL - the loser must ALWAYS lose at least 1 resource
+    let hit_resource_count = hit_resource_count.max(1) as u8;
+    
+    // Double-check: if somehow hit_resource_count is still 0, force it to 1
+    let hit_resource_count = if hit_resource_count == 0 { 1 } else { hit_resource_count };
+    
+    // Emit event with attacker and defender tile colors, resources, roll results, and hit count
     emit!(AttackResolved {
         attacker_tile_color: defender.attacker_tile_color,
         attacker_resources: attacker_resources_before,
@@ -312,12 +372,8 @@ pub fn resolve_attack(ctx: Context<ResolveAttack>) -> Result<()> {
         defender_tile_color: defender.defender_tile_color,
         defender_resources: defender_resources_before,
         defender_roll_result: defender_value as u16,
+        hit_resource_count,
     });
-
-    // Determine winner (higher number wins)
-    let attacker_won = attacker_value > defender_value;
-    defender.attacker_won = attacker_won;
-    defender.is_attack_resolved = true;
 
     // Get color names for logging
     let attacker_color_name = match defender.attacker_tile_color {
@@ -386,11 +442,14 @@ pub fn resolve_attack(ctx: Context<ResolveAttack>) -> Result<()> {
     check_for_winner(game, clock.unix_timestamp)?;
     
     if attacker_won {
-        // Attacker wins: defender loses 1 resource per successful attack
-        if defender_resources > 1 {
-            game.tile_data[defender_tile_idx].resource_count = defender_resources - 1;
+        // Attacker wins: defender loses hit_resource_count resources
+        let hit_amount = hit_resource_count as u16;
+        if defender_resources > hit_amount {
+            // Defender has more resources than the hit, just subtract the hit
+            game.tile_data[defender_tile_idx].resource_count = defender_resources - hit_amount;
         } else {
-            // Defender has 1 resource left, attacker takes the tile
+            // Defender has resources <= hit_amount, so they lose the tile
+            // Attacker takes the tile
             // Ensure attacker has at least 1 resource to move
             let current_attacker_resources = game.tile_data[attacker_tile_idx].resource_count;
             require!(
@@ -421,14 +480,18 @@ pub fn resolve_attack(ctx: Context<ResolveAttack>) -> Result<()> {
             // Get tier of the tile being transferred
             let tier = get_tile_tier(defender_tile_idx as u16, game.rows, game.columns);
             
-            // Update tile ownership
-            game.tile_data[defender_tile_idx].color = attacker_color;
-            game.tile_data[defender_tile_idx].resource_count = 1;
-            
-            // Move 1 resource from attacker to defender tile
-            game.tile_data[attacker_tile_idx].resource_count = current_attacker_resources
+            // Calculate resources to move: all but 1 from attacker's tile
+            let resources_to_move = current_attacker_resources
                 .checked_sub(1)
                 .ok_or(HexoneError::Invalid)?;
+            
+            // Update tile ownership
+            game.tile_data[defender_tile_idx].color = attacker_color;
+            // Move all but 1 resource from attacker to the newly captured tile
+            game.tile_data[defender_tile_idx].resource_count = resources_to_move;
+            
+            // Keep 1 resource on the attacker's original tile
+            game.tile_data[attacker_tile_idx].resource_count = 1;
             
             // Update tile counts: decrement defender's count, increment attacker's count
             // (This happens AFTER XP calculation, so XP was calculated with old tile counts)
@@ -486,12 +549,25 @@ pub fn resolve_attack(ctx: Context<ResolveAttack>) -> Result<()> {
             update_tier_count_on_gain(game, attacker_index, tier)?;
         }
     } else {
-        // Defender wins: attacker loses 1 resource per failed attack
+        // Defender wins: attacker loses hit_resource_count resources
         // Attacker must keep at least 1 resource to maintain tile ownership
+        // CRITICAL: Minimum loss is ALWAYS 1 - the attacker MUST lose at least 1 resource
+        let hit_amount = hit_resource_count.max(1) as u16; // Ensure at least 1
+        
+        // Always subtract at least 1 resource (enforced minimum)
         if attacker_resources > 1 {
-            game.tile_data[attacker_tile_idx].resource_count = attacker_resources - 1;
+            // Attacker has more than 1 resource
+            if attacker_resources > hit_amount {
+                // Subtract the calculated hit amount
+                game.tile_data[attacker_tile_idx].resource_count = attacker_resources - hit_amount;
+            } else {
+                // Attacker has resources <= hit_amount, subtract all but 1
+                // This ensures they lose at least 1 resource
+                game.tile_data[attacker_tile_idx].resource_count = 1;
+            }
         } else {
-            // Already at 1 resource, keep it
+            // Attacker already at 1 resource, keep it (can't go below 1)
+            // But they still "lost" - the hit was applied, they just can't go below 1
             game.tile_data[attacker_tile_idx].resource_count = 1;
         }
     }

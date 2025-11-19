@@ -55,6 +55,7 @@ const Games: React.FC = () => {
   const [creatingGame, setCreatingGame] = useState(false);
   const [treasuryBalances, setTreasuryBalances] = useState<Map<string, number>>(new Map());
   const [hotwalletBalance, setHotwalletBalance] = useState<number | null>(null);
+  const [transferringToHotwallet, setTransferringToHotwallet] = useState(false);
 
   // Set up HexoneClient - same pattern as SiclubClient
   const client = useMemo(() => {
@@ -159,26 +160,27 @@ const Games: React.FC = () => {
     checkPlayerAccount();
   }, [wallet.publicKey, connection, client]);
 
+  // Function to fetch hotwallet balance
+  const fetchHotwalletBalance = async () => {
+    if (!playerAccount?.hotwallet || !connection) {
+      setHotwalletBalance(null);
+      return;
+    }
+
+    try {
+      const balanceLamports = await connection.getBalance(playerAccount.hotwallet);
+      // Convert lamports to SOL - store as number but we'll format on display
+      // Divide by 1e9 to get SOL, keeping full precision
+      const balanceSOL = balanceLamports / 1e9;
+      setHotwalletBalance(balanceSOL);
+    } catch (err) {
+      console.error('Error fetching hotwallet balance:', err);
+      setHotwalletBalance(null);
+    }
+  };
+
   // Fetch hotwallet balance when player account is loaded
   useEffect(() => {
-    const fetchHotwalletBalance = async () => {
-      if (!playerAccount?.hotwallet || !connection) {
-        setHotwalletBalance(null);
-        return;
-      }
-
-      try {
-        const balanceLamports = await connection.getBalance(playerAccount.hotwallet);
-        // Convert lamports to SOL - store as number but we'll format on display
-        // Divide by 1e9 to get SOL, keeping full precision
-        const balanceSOL = balanceLamports / 1e9;
-        setHotwalletBalance(balanceSOL);
-      } catch (err) {
-        console.error('Error fetching hotwallet balance:', err);
-        setHotwalletBalance(null);
-      }
-    };
-
     // Fetch immediately on load
     if (playerAccount?.hotwallet) {
       fetchHotwalletBalance();
@@ -186,7 +188,57 @@ const Games: React.FC = () => {
     // Refresh balance every 5 seconds
     const interval = setInterval(fetchHotwalletBalance, 5000);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playerAccount?.hotwallet, connection]);
+
+  // Transfer 0.05 SOL to hotwallet
+  const handleTransferToHotwallet = async () => {
+    if (!wallet.publicKey || !wallet.sendTransaction || !playerAccount?.hotwallet || !connection) {
+      setError('Wallet not connected or hotwallet not available');
+      return;
+    }
+
+    setTransferringToHotwallet(true);
+    setError(null);
+
+    try {
+      const transferAmount = 0.05; // SOL
+      const lamports = transferAmount * 1e9; // Convert to lamports
+
+      // Create transfer instruction
+      const transaction = new Transaction().add(
+        SystemProgram.transfer({
+          fromPubkey: wallet.publicKey,
+          toPubkey: playerAccount.hotwallet,
+          lamports: lamports,
+        })
+      );
+
+      // Get recent blockhash
+      const { blockhash } = await connection.getLatestBlockhash('confirmed');
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = wallet.publicKey;
+
+      // Send and confirm transaction
+      const signature = await wallet.sendTransaction(transaction, connection);
+      await connection.confirmTransaction(signature, 'confirmed');
+
+      console.log(`[TRANSFER] Successfully transferred ${transferAmount} SOL to hotwallet:`, signature);
+
+      // Refresh balances
+      await fetchHotwalletBalance();
+      if (wallet.publicKey) {
+        const newBalance = await connection.getBalance(wallet.publicKey);
+        setBalance(newBalance / 1e9);
+      }
+    } catch (err) {
+      console.error('Error transferring SOL to hotwallet:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to transfer SOL to hotwallet';
+      setError(errorMessage);
+    } finally {
+      setTransferringToHotwallet(false);
+    }
+  };
 
   const fetchPlatformInfo = async () => {
     try {
@@ -689,14 +741,40 @@ const Games: React.FC = () => {
                 maxWidth: '1400px',
                 margin: '0 auto'
               }}>
-                <h3 style={{ 
-                  fontSize: '20px', 
-                  fontWeight: 'bold', 
-                  color: '#ffffff',
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center',
                   marginBottom: '16px'
                 }}>
-                  My Player
-                </h3>
+                  <h3 style={{ 
+                    fontSize: '20px', 
+                    fontWeight: 'bold', 
+                    color: '#ffffff',
+                    margin: 0
+                  }}>
+                    My Player
+                  </h3>
+                  {playerAccount?.hotwallet && (
+                    <button
+                      onClick={handleTransferToHotwallet}
+                      disabled={!wallet.connected || transferringToHotwallet || !playerAccount?.hotwallet}
+                      style={{
+                        padding: '6px 12px',
+                        backgroundColor: transferringToHotwallet ? '#666' : '#f97316',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '4px',
+                        fontSize: '12px',
+                        fontWeight: 'bold',
+                        cursor: (!wallet.connected || transferringToHotwallet || !playerAccount?.hotwallet) ? 'not-allowed' : 'pointer',
+                        opacity: (!wallet.connected || transferringToHotwallet || !playerAccount?.hotwallet) ? 0.6 : 1
+                      }}
+                    >
+                      {transferringToHotwallet ? 'Transferring...' : 'Add 0.05 SOL'}
+                    </button>
+                  )}
+                </div>
                 <div style={{
                   backgroundColor: '#2a2a2a',
                   borderRadius: '8px',
