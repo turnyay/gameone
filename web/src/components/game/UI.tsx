@@ -75,6 +75,14 @@ export const UI: React.FC<UIProps> = ({
     if (!game) return;
     
     const gameData = game as any;
+    const gameStatus = gameData?.status || '';
+    
+    // Don't show countdown if game is completed or winner found
+    if (gameStatus.includes('Winner Found') || gameStatus.includes('Game Completed') || gameStatus.includes('Completed')) {
+      setCountdown(0);
+      return;
+    }
+    
     // Get the earliest XP timestamp (when the last update happened)
     const xpTimestamps = [
       gameData?.xpTimestampPlayer1 || 0,
@@ -512,7 +520,15 @@ export const UI: React.FC<UIProps> = ({
               
               const bonusXpPerMinValues = tierCounts.map(calculateBonusXpPerMin);
               
+              const gameStatus = gameData?.status || '';
+              const isGameCompleted = gameStatus.includes('Winner Found') || gameStatus.includes('Game Completed') || gameStatus.includes('Completed');
+              
               const calculateSimulatedXP = (savedXP: number, timestamp: number, tileCount: number, bonusXpPerMin: number) => {
+                // Don't simulate XP if game is completed
+                if (isGameCompleted) {
+                  return savedXP;
+                }
+                
                 const currentTime = Math.floor(Date.now() / 1000);
                 const timeDiff = currentTime - timestamp;
                 if (timeDiff > 60) {
@@ -603,7 +619,7 @@ export const UI: React.FC<UIProps> = ({
               fontFamily: 'monospace',
               marginLeft: '10px'
             }}>
-              Update in: {countdown}s
+              {countdown > 0 && `Update in: ${countdown}s`}
             </span>
           </div>
           {/* Column headers */}
@@ -736,8 +752,20 @@ export const UI: React.FC<UIProps> = ({
               const bonusXpPerMinValues = tierCounts.map((tc, idx) => calculateBonusXpPerMin(tc, idx));
               console.log('Final bonus XP per min values:', bonusXpPerMinValues);
               
+              const gameStatus = gameData?.status || '';
+              const isGameCompleted = gameStatus.includes('Winner Found') || gameStatus.includes('Game Completed') || gameStatus.includes('Completed');
+              
               // Calculate simulated XP for each player on-the-fly
               const calculateSimulatedXP = (savedXP: number, timestamp: number, tileCount: number, bonusXpPerMin: number) => {
+                // Don't simulate XP if game is completed
+                if (isGameCompleted) {
+                  return {
+                    total: savedXP,
+                    baseXpGained: 0,
+                    bonusXpGained: 0
+                  };
+                }
+                
                 const currentTime = Math.floor(Date.now() / 1000);
                 const timeDiff = currentTime - timestamp;
                 if (timeDiff > 60) {

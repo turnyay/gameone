@@ -262,11 +262,22 @@ const Games: React.FC = () => {
             parsedTileData.push({ color, resourceCount });
           }
           
-          // Read game state and other fields (5 bytes)
-          const gameStateOffset = 272 + (144 * 4);
-          const gameState = data.readUInt8(gameStateOffset);
-          const rows = data.readUInt8(gameStateOffset + 1);
-          const columns = data.readUInt8(gameStateOffset + 2);
+          // Read tier counts (16 u8s = 16 bytes) - starts after tileData
+          const tierCountsOffset = 272 + (144 * 4);
+          
+          // Read tier bonus XP per minute (4 u8s = 4 bytes)
+          const tierBonusXpOffset = tierCountsOffset + 16;
+          
+          // Skip padding (4 bytes) + winning_player_pubkey (32 bytes) + winning_xp_limit (8 bytes)
+          const paddingOffset = tierBonusXpOffset + 4;
+          const winningPlayerPubkeyOffset = paddingOffset + 4;
+          const winningXpLimitOffset = winningPlayerPubkeyOffset + 32;
+          
+          // Read game state and other fields - game_state is at winningXpLimitOffset + 8
+          const gameStateOffset = winningXpLimitOffset + 8;
+          const gameState = data.length > gameStateOffset ? data.readUInt8(gameStateOffset) : 0;
+          const rows = data.length > gameStateOffset + 1 ? data.readUInt8(gameStateOffset + 1) : 11;
+          const columns = data.length > gameStateOffset + 2 ? data.readUInt8(gameStateOffset + 2) : 13;
           
           // Map game state to string representation
           let gameStateStr = 'Unknown';
@@ -280,19 +291,23 @@ const Games: React.FC = () => {
             case 2:
               gameStateStr = 'Completed';
               break;
+            case 3:
+              gameStateStr = 'Winner Found (Not Paid Out)';
+              break;
             default:
               gameStateStr = `Unknown (${gameState})`;
           }
 
           const tilesCovered = parsedTileData.filter(tile => tile.color !== 0).length;
+          const totalTiles = 137; // Fixed total tiles for the game board
 
           const game: GameAccount = {
             publicKey: gamePda,
             status: gameStateStr,
             players: [player1, player2, player3, player4].filter(pk => !pk.equals(PublicKey.default)),
             tilesCovered,
-            totalTiles: rows * columns || 0,
-            tilesCoveredPercent: rows * columns ? (tilesCovered / (rows * columns)) * 100 : 0,
+            totalTiles,
+            tilesCoveredPercent: totalTiles ? (tilesCovered / totalTiles) * 100 : 0,
             cost: 0, // Cost is not stored in the game account
             tileData: parsedTileData,
             rows,
@@ -858,7 +873,8 @@ const Games: React.FC = () => {
                         <span style={{ color: '#888' }}>Status:</span>
                         <span style={{ 
                           color: game.status === 'In Progress' ? '#00ff00' : 
-                                 game.status === 'Completed' ? '#ffa500' : '#888'
+                                 game.status === 'Completed' ? '#ffa500' :
+                                 game.status === 'Winner Found (Not Paid Out)' ? '#ff8800' : '#888'
                         }}>
                           {game.status}
                         </span>

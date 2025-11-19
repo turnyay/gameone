@@ -84,6 +84,34 @@ const Game: React.FC = () => {
 
     const updateSimulatedResources = () => {
       const gameData = game as any;
+      const gameStatus = gameData.status || '';
+      
+      // Don't simulate resources if game is completed or winner found
+      const isGameCompleted = gameStatus.includes('Winner Found') || gameStatus.includes('Game Completed') || gameStatus.includes('Completed');
+      
+      if (isGameCompleted) {
+        // Just use the base total without simulation
+        const totalResourcesAvailable = gameData.totalResourcesAvailable || 0;
+        setSimulatedTotalResources(totalResourcesAvailable);
+        
+        // Update available resources for current player without simulation
+        let playerResourcesSpent = 0;
+        if (wallet.publicKey) {
+          const gamePlayers = gameData.gamePlayers || [];
+          const currentPlayer = gamePlayers.find((p: any) => p && p.publicKey === wallet.publicKey?.toString());
+          if (currentPlayer) {
+            const playerIndex = currentPlayer.colorIndex;
+            if (playerIndex === 0) playerResourcesSpent = gameData.resourcesSpentPlayer1 || 0;
+            else if (playerIndex === 1) playerResourcesSpent = gameData.resourcesSpentPlayer2 || 0;
+            else if (playerIndex === 2) playerResourcesSpent = gameData.resourcesSpentPlayer3 || 0;
+            else if (playerIndex === 3) playerResourcesSpent = gameData.resourcesSpentPlayer4 || 0;
+          }
+        }
+        const playerAvailableResources = Math.max(0, totalResourcesAvailable - playerResourcesSpent);
+        setAvailableResources(playerAvailableResources);
+        return;
+      }
+      
       const totalResourcesAvailable = gameData.totalResourcesAvailable || 0;
       const availableResourcesTimestamp = gameData.availableResourcesTimestamp || 0;
       const resourcesPerMinute = gameData.resourcesPerMinute || 10;
