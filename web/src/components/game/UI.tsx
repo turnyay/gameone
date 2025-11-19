@@ -25,6 +25,7 @@ interface UIProps {
   programId?: PublicKey;
   game?: any;
   onClaimPrize?: () => Promise<void>;
+  liveFeedMessages?: Array<{ time: Date; message: string }>;
 }
 
 const getColorFromIndex = (index: number) => {
@@ -62,7 +63,8 @@ export const UI: React.FC<UIProps> = ({
   connection,
   programId,
   game,
-  onClaimPrize
+  onClaimPrize,
+  liveFeedMessages = []
 }) => {
   const [resourcesToAdd, setResourcesToAdd] = useState(availableResources);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -1039,7 +1041,6 @@ export const UI: React.FC<UIProps> = ({
           lineHeight: '1.5'
         }}>
           {(() => {
-            const now = new Date();
             const formatTime = (date: Date) => {
               return date.toLocaleTimeString('en-US', { 
                 hour12: false,
@@ -1048,20 +1049,24 @@ export const UI: React.FC<UIProps> = ({
                 second: '2-digit'
               });
             };
+            
+            const now = new Date();
+            const initialMessages = [
+              { time: new Date(now.getTime() - 3000), message: 'Connected to Solana blockchain...' },
+              { time: new Date(now.getTime() - 2000), message: 'Loaded game board ok' },
+              { time: new Date(now.getTime() - 1000), message: 'Initialized player resources' },
+              { time: new Date(now.getTime() - 0), message: 'Ready for gameplay' }
+            ];
+            
+            const allMessages = [...initialMessages, ...liveFeedMessages].sort((a, b) => a.time.getTime() - b.time.getTime());
+            
             return (
               <>
-                <div style={{ color: '#ffa500', textAlign: 'left', paddingLeft: '0' }}>
-                  [{formatTime(now)}] Connected to Solana blockchain...
-                </div>
-                <div style={{ color: '#ffa500', textAlign: 'left', paddingLeft: '0' }}>
-                  [{formatTime(new Date(now.getTime() + 1000))}] Loaded game board ok
-                </div>
-                <div style={{ color: '#ffa500', textAlign: 'left', paddingLeft: '0' }}>
-                  [{formatTime(new Date(now.getTime() + 2000))}] Initialized player resources
-                </div>
-                <div style={{ color: '#ffa500', textAlign: 'left', paddingLeft: '0' }}>
-                  [{formatTime(new Date(now.getTime() + 3000))}] Ready for gameplay
-                </div>
+                {allMessages.map((msg, index) => (
+                  <div key={index} style={{ color: '#ffa500', textAlign: 'left', paddingLeft: '0' }}>
+                    [{formatTime(msg.time)}] {msg.message}
+                  </div>
+                ))}
               </>
             );
           })()}

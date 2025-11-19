@@ -6,6 +6,7 @@ import { PublicKey, SystemProgram } from '@solana/web3.js';
 import { BN } from '@coral-xyz/anchor';
 import { Buffer } from 'buffer';
 import { HexoneClient, GameAccount, PROGRAM_ID } from '../lib/hexone';
+import { EventParser } from '@coral-xyz/anchor';
 import Phaser from 'phaser';
 import { MainScene } from '../components/game/MainScene';
 import { HexTile } from '../components/game/HexTile';
@@ -54,7 +55,10 @@ const Game: React.FC = () => {
     attackerWon: boolean;
     newAttackerResources: number;
     newDefenderResources: number;
+    attackerRollResult?: number;
+    defenderRollResult?: number;
   } | null>(null);
+  const [liveFeedMessages, setLiveFeedMessages] = useState<Array<{ time: Date; message: string }>>([]);
   
   // Set up HexoneClient - same pattern as SiclubClient
   const client = useMemo(() => {
@@ -1150,6 +1154,7 @@ const Game: React.FC = () => {
           programId={PROGRAM_ID}
           game={game}
           onClaimPrize={handleClaimPrize}
+          liveFeedMessages={liveFeedMessages}
         />
       </div>
 
@@ -1188,6 +1193,8 @@ const Game: React.FC = () => {
               ? game.tileData[attackData.defenderTileIndex]?.resourceCount
               : undefined
           }
+          attackerRollResult={attackResult?.attackerRollResult}
+          defenderRollResult={attackResult?.defenderRollResult}
           onResolveAttack={async () => {
             if (!client || !wallet.publicKey || !game || !attackData) {
               throw new Error('Wallet not connected or game not loaded');
@@ -1204,16 +1211,83 @@ const Game: React.FC = () => {
               // Wait for transaction confirmation
               await connection.confirmTransaction(tx);
 
-              // Parse transaction logs to get the attack result
+              // Parse transaction to get events and attack result
               let attackerWon: boolean | null = null;
+              let attackerRollResult: number | undefined;
+              let defenderRollResult: number | undefined;
+              
               try {
                 const transaction = await connection.getTransaction(tx, {
                   commitment: 'confirmed',
                   maxSupportedTransactionVersion: 0,
                 });
 
-                if (transaction?.meta?.logMessages) {
-                  // Look for log messages that indicate who won
+                // Parse events from transaction
+                if (transaction && client) {
+                  try {
+                    const eventParser = new EventParser(PROGRAM_ID, client.program.coder);
+                    const events = Array.from(eventParser.parseLogs(transaction.meta?.logMessages || []));
+                    
+                    console.log('Parsed events:', events);
+                    
+                    for (const event of events) {
+                      console.log('Event:', event.name, event.data);
+                      if (event.name === 'AttackResolved') {
+                        const data = event.data as any;
+                        console.log('AttackResolved event data:', data);
+                        // Try both snake_case and camelCase field names
+                        attackerRollResult = data.attackerRollResult ?? data.attacker_roll_result;
+                        defenderRollResult = data.defenderRollResult ?? data.defender_roll_result;
+                        // Determine winner from roll results
+                        if (attackerRollResult !== undefined && defenderRollResult !== undefined) {
+                          attackerWon = attackerRollResult > defenderRollResult;
+                          console.log('Roll results:', attackerRollResult, 'vs', defenderRollResult, 'Winner:', attackerWon ? 'Attacker' : 'Defender');
+                        }
+                        break;
+                      }
+                    }
+                  } catch (eventError) {
+                    console.warn('Could not parse events:', eventError);
+                    // Try to parse from raw logs as fallback
+                    if (transaction.meta?.logMessages) {
+                      for (const log of transaction.meta.logMessages) {
+                        // Look for event data in logs
+                        if (log.includes('Program data:')) {
+                          console.log('Found program data log:', log);
+                        }
+                      }
+                    }
+                  }
+                }
+                
+                // Parse roll results from transaction logs if event parsing failed
+                if ((attackerRollResult === undefined || defenderRollResult === undefined) && transaction?.meta?.logMessages) {
+                  // Look for log messages with roll results
+                  // Format: "Attacker Red (750) won against Yellow (320)"
+                  for (const log of transaction.meta.logMessages) {
+                    // Try to extract numbers from log messages
+                    // Look for patterns like "won against" or "lost against" with numbers
+                    const wonMatch = log.match(/Attacker\s+\w+\s+\((\d+)\)\s+won\s+against\s+\w+\s+\((\d+)\)/);
+                    const lostMatch = log.match(/Attacker\s+\w+\s+\((\d+)\)\s+lost\s+against\s+\w+\s+\((\d+)\)/);
+                    
+                    if (wonMatch) {
+                      attackerRollResult = parseInt(wonMatch[1], 10);
+                      defenderRollResult = parseInt(wonMatch[2], 10);
+                      attackerWon = true;
+                      console.log('Parsed roll results from logs (won):', attackerRollResult, 'vs', defenderRollResult);
+                      break;
+                    } else if (lostMatch) {
+                      attackerRollResult = parseInt(lostMatch[1], 10);
+                      defenderRollResult = parseInt(lostMatch[2], 10);
+                      attackerWon = false;
+                      console.log('Parsed roll results from logs (lost):', attackerRollResult, 'vs', defenderRollResult);
+                      break;
+                    }
+                  }
+                }
+
+                // Final fallback: parse winner from logs if we still don't have it
+                if (attackerWon === null && transaction?.meta?.logMessages) {
                   for (const log of transaction.meta.logMessages) {
                     if (log.includes('Attacker') && log.includes('won against')) {
                       attackerWon = true;
@@ -1224,6 +1298,12 @@ const Game: React.FC = () => {
                     }
                   }
                 }
+                
+                console.log('Final attack result:', {
+                  attackerWon,
+                  attackerRollResult,
+                  defenderRollResult
+                });
               } catch (logError) {
                 console.warn('Could not parse transaction logs, falling back to game state comparison:', logError);
                 // Fallback to game state comparison if log parsing fails
@@ -1263,8 +1343,20 @@ const Game: React.FC = () => {
                 setAttackResult({
                   attackerWon,
                   newAttackerResources,
-                  newDefenderResources
+                  newDefenderResources,
+                  attackerRollResult,
+                  defenderRollResult
                 });
+                
+                // Add attack result message to live feed
+                const attackerColorName = ['Red', 'Yellow', 'Green', 'Blue'][attackData.attackerColor] || 'Unknown';
+                const defenderColorName = ['Red', 'Yellow', 'Green', 'Blue'][attackData.defenderColor] || 'Unknown';
+                const winnerName = attackerWon ? attackerColorName : defenderColorName;
+                const rollText = attackerRollResult !== undefined && defenderRollResult !== undefined
+                  ? ` (${attackerColorName} rolled ${attackerRollResult}, ${defenderColorName} rolled ${defenderRollResult})`
+                  : '';
+                const message = `${attackerColorName} attacked ${defenderColorName} - ${winnerName} wins!${rollText}`;
+                setLiveFeedMessages(prev => [...prev, { time: new Date(), message }]);
               }
             } catch (err) {
               console.error('Error resolving attack:', err);

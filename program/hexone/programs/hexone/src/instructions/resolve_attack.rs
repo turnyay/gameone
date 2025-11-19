@@ -2,6 +2,7 @@ use anchor_lang::prelude::*;
 use crate::state::game::{Game, GAME_STATE_IN_PROGRESS, get_tile_tier, update_tier_count_on_gain, update_tier_count_on_loss, calculate_tier_bonus_xp, check_for_winner};
 use crate::state::defender::Defender;
 use crate::error::HexoneError;
+use crate::events::AttackResolved;
 use sha2::{Sha256, Digest};
 
 /// Calculate new XP based on time elapsed
@@ -280,6 +281,22 @@ pub fn resolve_attack(ctx: Context<ResolveAttack>) -> Result<()> {
     // Store the random results (0-999)
     defender.attacking_result = attacker_value as u16;
     defender.defending_result = defender_value as u16;
+    
+    // Get attacker and defender resources before any changes
+    let attacker_tile_idx = defender.attacker_tile_index as usize;
+    let defender_tile_idx = defender.defender_tile_index as usize;
+    let attacker_resources_before = game.tile_data[attacker_tile_idx].resource_count;
+    let defender_resources_before = game.tile_data[defender_tile_idx].resource_count;
+    
+    // Emit event with attacker and defender tile colors, resources, and roll results
+    emit!(AttackResolved {
+        attacker_tile_color: defender.attacker_tile_color,
+        attacker_resources: attacker_resources_before,
+        attacker_roll_result: attacker_value as u16,
+        defender_tile_color: defender.defender_tile_color,
+        defender_resources: defender_resources_before,
+        defender_roll_result: defender_value as u16,
+    });
 
     // Determine winner (higher number wins)
     let attacker_won = attacker_value > defender_value;

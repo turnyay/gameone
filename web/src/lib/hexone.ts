@@ -1233,7 +1233,7 @@ interface WalletAdapter {
 }
 
 export class HexoneClient {
-  private program: Program<Idl>;
+  public program: Program<Idl>;
   private connection: Connection;
   private provider?: AnchorProvider;
   private programId: PublicKey;

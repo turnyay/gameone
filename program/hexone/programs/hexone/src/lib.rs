@@ -2,11 +2,13 @@ use anchor_lang::prelude::*;
 
 pub mod constants;
 pub mod error;
+pub mod events;
 pub mod instructions;
 pub mod state;
 
 pub use state::*;
 pub use constants::*;
+pub use events::*;
 pub use instructions::*;
 
 declare_id!("4hCMsw4pRN8VsyPg6USUEyEmnX5VTApEAWyEmMdrrtGj");

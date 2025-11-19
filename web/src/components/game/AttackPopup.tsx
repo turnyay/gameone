@@ -21,6 +21,8 @@ interface AttackPopupProps {
   attackerWon?: boolean;
   newAttackerResources?: number;
   newDefenderResources?: number;
+  attackerRollResult?: number; // 0-999
+  defenderRollResult?: number; // 0-999
 }
 
 const getColorName = (colorIndex: number): string => {
@@ -90,7 +92,9 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
   isResolved = false,
   attackerWon = false,
   newAttackerResources,
-  newDefenderResources
+  newDefenderResources,
+  attackerRollResult,
+  defenderRollResult
 }) => {
   const [timeRemaining, setTimeRemaining] = useState(3);
   const [canResolve, setCanResolve] = useState(false);
@@ -218,7 +222,7 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
           }}
         >
           {/* Attacker Tile */}
-          <div style={{ textAlign: 'center' }}>
+          <div style={{ textAlign: 'center', position: 'relative', minHeight: '200px' }}>
             <div style={{ marginBottom: '10px' }}>
               <HexTileSVG
                 color={attackerColorHex}
@@ -231,25 +235,39 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
             <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
               Tile ({attackerTileX}, {attackerTileY})
             </div>
-            {showResult && attackerWon === false && newAttackerResources !== undefined && (
+            {showResult && attackerRollResult !== undefined && (
               <div
                 style={{
-                  color: '#ff0000',
-                  fontSize: '18px',
+                  color: '#ffa500',
+                  fontSize: '24px',
                   fontWeight: 'bold',
                   marginTop: '8px',
                   animation: 'fadeIn 0.5s'
                 }}
               >
-                -1
+                Roll: {attackerRollResult}
               </div>
             )}
+            <div style={{ minHeight: '26px', marginTop: '4px' }}>
+              {showResult && attackerWon === false && newAttackerResources !== undefined && (
+                <div
+                  style={{
+                    color: '#ff0000',
+                    fontSize: '18px',
+                    fontWeight: 'bold',
+                    animation: 'fadeIn 0.5s'
+                  }}
+                >
+                  -1
+                </div>
+              )}
+            </div>
           </div>
 
           <div style={{ fontSize: '24px', color: '#ffa500' }}>VS</div>
 
           {/* Defender Tile */}
-          <div style={{ textAlign: 'center' }}>
+          <div style={{ textAlign: 'center', position: 'relative', minHeight: '200px' }}>
             <div style={{ marginBottom: '10px' }}>
               <HexTileSVG
                 color={defenderColorHex}
@@ -262,19 +280,33 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
             <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
               Tile ({defenderTileX}, {defenderTileY})
             </div>
-            {showResult && attackerWon === true && newDefenderResources !== undefined && (
+            {showResult && defenderRollResult !== undefined && (
               <div
                 style={{
-                  color: '#ff0000',
-                  fontSize: '18px',
+                  color: '#ffa500',
+                  fontSize: '24px',
                   fontWeight: 'bold',
                   marginTop: '8px',
                   animation: 'fadeIn 0.5s'
                 }}
               >
-                -1
+                Roll: {defenderRollResult}
               </div>
             )}
+            <div style={{ minHeight: '26px', marginTop: '4px' }}>
+              {showResult && attackerWon === true && newDefenderResources !== undefined && (
+                <div
+                  style={{
+                    color: '#ff0000',
+                    fontSize: '18px',
+                    fontWeight: 'bold',
+                    animation: 'fadeIn 0.5s'
+                  }}
+                >
+                  -1
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
