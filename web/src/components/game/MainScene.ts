@@ -241,13 +241,13 @@ export class MainScene extends Phaser.Scene {
           { dx: 0, dy: 1 }    // bottom
         ]
       : [
-          { dx: 1, dy: 0 },   // right
-          { dx: 1, dy: -1 },  // top-right
-          { dx: 0, dy: -1 },  // top
-          { dx: -1, dy: -1 }, // top-left
-          { dx: -1, dy: 0 },  // left
-          { dx: 0, dy: 1 }    // bottom
-        ];
+      { dx: 1, dy: 0 },   // right
+      { dx: 1, dy: -1 },  // top-right
+      { dx: 0, dy: -1 },  // top
+      { dx: -1, dy: -1 }, // top-left
+      { dx: -1, dy: 0 },  // left
+      { dx: 0, dy: 1 }    // bottom
+    ];
 
     for (const offset of neighborOffsets) {
       const neighborRow = row + offset.dy;

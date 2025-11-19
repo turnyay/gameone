@@ -59,6 +59,46 @@ export const UI: React.FC<UIProps> = ({
 }) => {
   const [resourcesToAdd, setResourcesToAdd] = useState(availableResources);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [countdown, setCountdown] = useState(60);
+  
+  // Calculate countdown based on game account XP timestamp
+  useEffect(() => {
+    if (!game) return;
+    
+    const gameData = game as any;
+    // Get the earliest XP timestamp (when the last update happened)
+    const xpTimestamps = [
+      gameData?.xpTimestampPlayer1 || 0,
+      gameData?.xpTimestampPlayer2 || 0,
+      gameData?.xpTimestampPlayer3 || 0,
+      gameData?.xpTimestampPlayer4 || 0
+    ].filter(ts => ts > 0);
+    
+    if (xpTimestamps.length === 0) {
+      setCountdown(60);
+      return;
+    }
+    
+    const updateCountdown = () => {
+      const currentTime = Math.floor(Date.now() / 1000);
+      // Find the earliest timestamp (most recent update)
+      const earliestTimestamp = Math.min(...xpTimestamps);
+      // Calculate seconds since last update
+      const secondsSinceLastUpdate = currentTime - earliestTimestamp;
+      // Calculate seconds remaining in the current 60-second cycle
+      const secondsInCurrentCycle = secondsSinceLastUpdate % 60;
+      const secondsUntilNextUpdate = 60 - secondsInCurrentCycle;
+      setCountdown(secondsUntilNextUpdate);
+    };
+    
+    // Update immediately
+    updateCountdown();
+    
+    // Update every second
+    const countdownTimer = setInterval(updateCountdown, 1000);
+    
+    return () => clearInterval(countdownTimer);
+  }, [game, refreshKey]);
   
   // Force re-render every minute to update simulated XP display
   useEffect(() => {
@@ -314,7 +354,17 @@ export const UI: React.FC<UIProps> = ({
         color: '#fff'
       }}>
         <div style={{ marginBottom: '30px' }}>
-          <h2 style={{ marginBottom: '0' }}>Scoreboard</h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+            <h2 style={{ marginBottom: '0' }}>Scoreboard</h2>
+            <span style={{ 
+              fontSize: '12px', 
+              color: '#888', 
+              fontFamily: 'monospace',
+              marginLeft: '10px'
+            }}>
+              Update in: {countdown}s
+            </span>
+          </div>
           {/* Column headers */}
           <div style={{ 
             display: 'flex', 
@@ -636,8 +686,8 @@ export const UI: React.FC<UIProps> = ({
                           if (tooltip) tooltip.style.display = 'none';
                         }}
                       >
-                        {player.tileCount}
-                      </span>
+                      {player.tileCount}
+                    </span>
                       <div
                         style={{
                           display: 'none',
