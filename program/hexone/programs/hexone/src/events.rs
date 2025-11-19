@@ -10,3 +10,8 @@ pub struct AttackResolved {
     pub defender_roll_result: u16, // 0-999
 }
 
+#[event]
+pub struct GameStarted {
+    pub game_id: u64,
+}
+

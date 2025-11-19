@@ -85,8 +85,7 @@ pub fn create_game(ctx: Context<CreateGame>) -> Result<()> {
     game.bump = ctx.bumps.game;
 
     // Initialize resource tracking fields
-    let clock = Clock::get()?;
-    game.available_resources_timestamp = clock.unix_timestamp;
+    game.available_resources_timestamp = 0; // Will be set when game starts
     game.total_resources_available = 0;
     game.resources_spent_player1 = 0;
     game.resources_spent_player2 = 0;
@@ -95,11 +94,10 @@ pub fn create_game(ctx: Context<CreateGame>) -> Result<()> {
 
     // Initialize XP tracking fields
     game.xp_per_minute_per_tile = XP_PER_MINUTE_PER_TILE;
-    let current_timestamp = clock.unix_timestamp;
-    game.xp_timestamp_player1 = current_timestamp;
-    game.xp_timestamp_player2 = current_timestamp;
-    game.xp_timestamp_player3 = current_timestamp;
-    game.xp_timestamp_player4 = current_timestamp;
+    game.xp_timestamp_player1 = 0; // Will be set when game starts
+    game.xp_timestamp_player2 = 0; // Will be set when game starts
+    game.xp_timestamp_player3 = 0; // Will be set when game starts
+    game.xp_timestamp_player4 = 0; // Will be set when game starts
     game.xp_player1 = 0;
     game.xp_player2 = 0;
     game.xp_player3 = 0;

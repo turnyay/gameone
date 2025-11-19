@@ -36,7 +36,7 @@ fn update_all_players_xp(game: &mut Game, current_time: i64) -> Result<()> {
     let xp_per_minute_per_tile = game.xp_per_minute_per_tile;
     
     // Update player 1 XP
-    if current_time - game.xp_timestamp_player1 > 60 {
+    if game.xp_timestamp_player1 > 0 && current_time - game.xp_timestamp_player1 > 60 {
         let time_diff = current_time - game.xp_timestamp_player1;
         let minutes_elapsed = (time_diff / 60) as u32;
         
@@ -73,7 +73,7 @@ fn update_all_players_xp(game: &mut Game, current_time: i64) -> Result<()> {
     }
     
     // Update player 2 XP
-    if current_time - game.xp_timestamp_player2 > 60 {
+    if game.xp_timestamp_player2 > 0 && current_time - game.xp_timestamp_player2 > 60 {
         let time_diff = current_time - game.xp_timestamp_player2;
         let minutes_elapsed = (time_diff / 60) as u32;
         
@@ -110,7 +110,7 @@ fn update_all_players_xp(game: &mut Game, current_time: i64) -> Result<()> {
     }
     
     // Update player 3 XP
-    if current_time - game.xp_timestamp_player3 > 60 {
+    if game.xp_timestamp_player3 > 0 && current_time - game.xp_timestamp_player3 > 60 {
         let time_diff = current_time - game.xp_timestamp_player3;
         let minutes_elapsed = (time_diff / 60) as u32;
         
@@ -147,7 +147,7 @@ fn update_all_players_xp(game: &mut Game, current_time: i64) -> Result<()> {
     }
     
     // Update player 4 XP
-    if current_time - game.xp_timestamp_player4 > 60 {
+    if game.xp_timestamp_player4 > 0 && current_time - game.xp_timestamp_player4 > 60 {
         let time_diff = current_time - game.xp_timestamp_player4;
         let minutes_elapsed = (time_diff / 60) as u32;
         

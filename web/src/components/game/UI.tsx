@@ -91,8 +91,9 @@ export const UI: React.FC<UIProps> = ({
       gameData?.xpTimestampPlayer4 || 0
     ].filter(ts => ts > 0);
     
+    // Don't show countdown if game hasn't started (all timestamps are 0)
     if (xpTimestamps.length === 0) {
-      setCountdown(60);
+      setCountdown(0);
       return;
     }
     
@@ -388,6 +389,9 @@ export const UI: React.FC<UIProps> = ({
                   // Find current player index
                   const currentPlayerIndex = gamePlayers.findIndex(p => p && p.publicKey === currentWallet);
                   
+                  const gameStatus = gameData?.status || '';
+                  const isGameInProgress = gameStatus === 'In Progress';
+                  
                   // Calculate simulated XP for current player
                   let currentPlayerSimulatedXp = 0;
                   if (currentPlayerIndex >= 0 && currentPlayerIndex < 4) {
@@ -396,29 +400,33 @@ export const UI: React.FC<UIProps> = ({
                     const tileCount = tileCounts[currentPlayerIndex];
                     const tierCount = tierCounts[currentPlayerIndex];
                     
-                    const currentTime = Math.floor(Date.now() / 1000);
-                    const timeDiff = currentTime - xpTimestamp;
-                    
-                    if (timeDiff > 60) {
-                      const minutesElapsed = Math.floor(timeDiff / 60);
-                      const xpGained = minutesElapsed * xpPerMinutePerTile * tileCount;
-                      const bonusXpGained = minutesElapsed * (
-                        tierCount.gold * goldTierBonusXpPerMin +
-                        tierCount.silver * silverTierBonusXpPerMin +
-                        tierCount.bronze * bronzeTierBonusXpPerMin +
-                        tierCount.iron * ironTierBonusXpPerMin
-                      );
-                      currentPlayerSimulatedXp = savedXP + xpGained + bonusXpGained;
+                    // Only simulate if game is in progress and timestamp > 0
+                    if (isGameInProgress && xpTimestamp > 0) {
+                      const currentTime = Math.floor(Date.now() / 1000);
+                      const timeDiff = currentTime - xpTimestamp;
+                      
+                      if (timeDiff > 60) {
+                        const minutesElapsed = Math.floor(timeDiff / 60);
+                        const xpGained = minutesElapsed * xpPerMinutePerTile * tileCount;
+                        const bonusXpGained = minutesElapsed * (
+                          tierCount.gold * goldTierBonusXpPerMin +
+                          tierCount.silver * silverTierBonusXpPerMin +
+                          tierCount.bronze * bronzeTierBonusXpPerMin +
+                          tierCount.iron * ironTierBonusXpPerMin
+                        );
+                        currentPlayerSimulatedXp = savedXP + xpGained + bonusXpGained;
+                      } else {
+                        currentPlayerSimulatedXp = savedXP;
+                      }
                     } else {
                       currentPlayerSimulatedXp = savedXP;
                     }
                   }
                   
-                  const gameStatus = gameData?.status || '';
                   const winningPlayerPubkey = gameData?.winningPlayerPubkey;
                   const isWinner = winningPlayerPubkey && currentWallet && 
                     winningPlayerPubkey.toString() === currentWallet;
-                  const hasReachedLimit = currentPlayerSimulatedXp >= winningXpLimit;
+                  const hasReachedLimit = isGameInProgress && currentPlayerSimulatedXp >= winningXpLimit;
                   // Show button if: (status is Winner Found AND user is winner) OR (user has reached limit AND (is winner OR game state hasn't updated yet))
                   // If game state hasn't updated, show button if they've reached limit (on-chain will verify they're the winner)
                   const gameStateNotUpdated = !gameStatus.includes('Winner Found');
@@ -522,10 +530,11 @@ export const UI: React.FC<UIProps> = ({
               
               const gameStatus = gameData?.status || '';
               const isGameCompleted = gameStatus.includes('Winner Found') || gameStatus.includes('Game Completed') || gameStatus.includes('Completed');
+              const isGameInProgress = gameStatus === 'In Progress';
               
               const calculateSimulatedXP = (savedXP: number, timestamp: number, tileCount: number, bonusXpPerMin: number) => {
-                // Don't simulate XP if game is completed
-                if (isGameCompleted) {
+                // Don't simulate XP if game is completed or not in progress
+                if (isGameCompleted || !isGameInProgress || timestamp === 0) {
                   return savedXP;
                 }
                 
@@ -558,7 +567,8 @@ export const UI: React.FC<UIProps> = ({
               });
               
               // Check if any player has reached the winning XP limit (simulated)
-              const hasWinner = maxXp >= winningXpLimit;
+              // Only check for winner if game is in progress
+              const hasWinner = isGameInProgress && maxXp >= winningXpLimit;
               const simulatedGameStatus = hasWinner ? 'Winner Found' : (gameData?.status || 'Unknown');
               
               const playerNames = ['Red', 'Yellow', 'Green', 'Blue'];
@@ -636,18 +646,18 @@ export const UI: React.FC<UIProps> = ({
             borderBottom: '1px solid #333'
           }}>
             <div style={{ width: '16px' }} /> {/* Spacer for color square */}
-            <div style={{ flex: 1 }} /> {/* Spacer for player name */}
+            <div style={{ flex: 1, maxWidth: '120px' }} /> {/* Spacer for player name */}
             <div style={{ 
               display: 'flex', 
               flexDirection: 'column', 
               alignItems: 'flex-end',
-              minWidth: '80px',
+              minWidth: '110px',
               gap: '2px'
             }}>
               <span>XP</span>
             </div>
-            <span style={{ minWidth: '80px', textAlign: 'right' }}>Tiles</span>
-            <span style={{ minWidth: '80px', textAlign: 'right' }}>Bonus</span>
+            <span style={{ minWidth: '60px', textAlign: 'right' }}>Tiles</span>
+            <span style={{ minWidth: '60px', textAlign: 'right' }}>Bonus</span>
           </div>
           <div style={{ 
             display: 'flex', 
@@ -754,11 +764,12 @@ export const UI: React.FC<UIProps> = ({
               
               const gameStatus = gameData?.status || '';
               const isGameCompleted = gameStatus.includes('Winner Found') || gameStatus.includes('Game Completed') || gameStatus.includes('Completed');
+              const isGameInProgress = gameStatus === 'In Progress';
               
               // Calculate simulated XP for each player on-the-fly
               const calculateSimulatedXP = (savedXP: number, timestamp: number, tileCount: number, bonusXpPerMin: number) => {
-                // Don't simulate XP if game is completed
-                if (isGameCompleted) {
+                // Don't simulate XP if game is completed, not in progress, or timestamp is 0
+                if (isGameCompleted || !isGameInProgress || timestamp === 0) {
                   return {
                     total: savedXP,
                     baseXpGained: 0,
@@ -861,6 +872,7 @@ export const UI: React.FC<UIProps> = ({
                       display: 'flex', 
                       flexDirection: 'column',
                       flex: 1,
+                      maxWidth: '120px',
                       gap: '2px',
                       position: 'relative'
                     }}>
@@ -928,7 +940,7 @@ export const UI: React.FC<UIProps> = ({
                       display: 'flex', 
                       flexDirection: 'column', 
                       alignItems: 'flex-end',
-                      minWidth: '80px',
+                      minWidth: '110px',
                       gap: '2px'
                     }}>
                       <span style={{ color: '#00ff00', fontWeight: 'bold', fontSize: '14px' }}>
@@ -938,7 +950,7 @@ export const UI: React.FC<UIProps> = ({
                     <div style={{ 
                       position: 'relative',
                       display: 'inline-block',
-                      minWidth: '80px',
+                      minWidth: '60px',
                       textAlign: 'right'
                     }}>
                       <span 
@@ -985,7 +997,7 @@ export const UI: React.FC<UIProps> = ({
                     <div style={{ 
                       position: 'relative',
                       display: 'inline-block',
-                      minWidth: '80px',
+                      minWidth: '60px',
                       textAlign: 'right'
                     }}>
                       <span 

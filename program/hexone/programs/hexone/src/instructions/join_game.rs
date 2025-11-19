@@ -3,6 +3,7 @@ use crate::state::game::{Game, GAME_STATE_WAITING, GAME_STATE_IN_PROGRESS};
 use crate::state::player::{Player, PLAYER_STATUS_PLAYING, PLAYER_STATUS_READY};
 use crate::state::platform::Platform;
 use crate::error::HexoneError;
+use crate::events::GameStarted;
 
 #[derive(Accounts)]
 pub struct JoinGame<'info> {
@@ -14,7 +15,6 @@ pub struct JoinGame<'info> {
         seeds = [b"player", wallet.key().as_ref()],
         bump = player.bump,
         constraint = player.wallet == wallet.key() @ HexoneError::PlayerNotAuthorized,
-        constraint = player.player_status == PLAYER_STATUS_READY @ HexoneError::PlayerNotReady
     )]
     pub player: Account<'info, Player>,
 
@@ -99,6 +99,20 @@ pub fn join_game(ctx: Context<JoinGame>, game_id: u64) -> Result<()> {
        game.player3 != Pubkey::default() && 
        game.player4 != Pubkey::default() {
         game.game_state = GAME_STATE_IN_PROGRESS;
+        
+        // Set all timestamps to start the game
+        let clock = Clock::get()?;
+        let current_timestamp = clock.unix_timestamp;
+        game.available_resources_timestamp = current_timestamp;
+        game.xp_timestamp_player1 = current_timestamp;
+        game.xp_timestamp_player2 = current_timestamp;
+        game.xp_timestamp_player3 = current_timestamp;
+        game.xp_timestamp_player4 = current_timestamp;
+        
+        // Emit game started event
+        emit!(GameStarted {
+            game_id: game.game_id,
+        });
     }
 
     Ok(())

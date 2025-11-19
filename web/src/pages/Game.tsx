@@ -116,6 +116,27 @@ const Game: React.FC = () => {
       const availableResourcesTimestamp = gameData.availableResourcesTimestamp || 0;
       const resourcesPerMinute = gameData.resourcesPerMinute || 10;
 
+      // Don't simulate if timestamp is 0 (game hasn't started)
+      if (availableResourcesTimestamp === 0) {
+        setSimulatedTotalResources(totalResourcesAvailable);
+        // Update available resources for current player without simulation
+        let playerResourcesSpent = 0;
+        if (wallet.publicKey) {
+          const gamePlayers = gameData.gamePlayers || [];
+          const currentPlayer = gamePlayers.find((p: any) => p && p.publicKey === wallet.publicKey?.toString());
+          if (currentPlayer) {
+            const playerIndex = currentPlayer.colorIndex;
+            if (playerIndex === 0) playerResourcesSpent = gameData.resourcesSpentPlayer1 || 0;
+            else if (playerIndex === 1) playerResourcesSpent = gameData.resourcesSpentPlayer2 || 0;
+            else if (playerIndex === 2) playerResourcesSpent = gameData.resourcesSpentPlayer3 || 0;
+            else if (playerIndex === 3) playerResourcesSpent = gameData.resourcesSpentPlayer4 || 0;
+          }
+        }
+        const playerAvailableResources = Math.max(0, totalResourcesAvailable - playerResourcesSpent);
+        setAvailableResources(playerAvailableResources);
+        return;
+      }
+      
       const currentTime = Math.floor(Date.now() / 1000);
       const timeDiff = currentTime - availableResourcesTimestamp;
       
@@ -648,6 +669,37 @@ const Game: React.FC = () => {
         .rpc();
 
       console.log('Join game transaction:', tx);
+      
+      // Parse events from transaction to check if game started
+      try {
+        const transaction = await connection.getTransaction(tx, {
+          commitment: 'confirmed',
+          maxSupportedTransactionVersion: 0,
+        });
+
+        // Parse events from transaction
+        if (transaction && client) {
+          try {
+            const eventParser = new EventParser(PROGRAM_ID, client.program.coder);
+            const events = Array.from(eventParser.parseLogs(transaction.meta?.logMessages || []));
+            
+            for (const event of events) {
+              if (event.name === 'GameStarted') {
+                const data = event.data as any;
+                const gameId = data.gameId ?? data.game_id;
+                const message = `Game #${gameId} has started!`;
+                setLiveFeedMessages(prev => [...prev, { time: new Date(), message }]);
+                break;
+              }
+            }
+          } catch (eventError) {
+            console.warn('Could not parse events:', eventError);
+          }
+        }
+      } catch (logError) {
+        console.warn('Could not fetch transaction for event parsing:', logError);
+      }
+      
       setError(null);
       alert('Successfully joined the game!');
       

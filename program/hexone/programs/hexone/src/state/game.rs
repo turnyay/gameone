@@ -412,7 +412,7 @@ pub fn check_for_winner(game: &mut Game, current_time: i64) -> Result<()> {
         let mut player_totals: Vec<(Pubkey, u64)> = Vec::new();
         
         // Player 1
-        if game.player1 != Pubkey::default() {
+        if game.player1 != Pubkey::default() && game.xp_timestamp_player1 > 0 {
             let time_diff = current_time - game.xp_timestamp_player1;
             let mut total_xp = game.xp_player1 as u64;
             
@@ -446,7 +446,7 @@ pub fn check_for_winner(game: &mut Game, current_time: i64) -> Result<()> {
         }
         
         // Player 2
-        if game.player2 != Pubkey::default() {
+        if game.player2 != Pubkey::default() && game.xp_timestamp_player2 > 0 {
             let time_diff = current_time - game.xp_timestamp_player2;
             let mut total_xp = game.xp_player2 as u64;
             
@@ -478,7 +478,7 @@ pub fn check_for_winner(game: &mut Game, current_time: i64) -> Result<()> {
         }
         
         // Player 3
-        if game.player3 != Pubkey::default() {
+        if game.player3 != Pubkey::default() && game.xp_timestamp_player3 > 0 {
             let time_diff = current_time - game.xp_timestamp_player3;
             let mut total_xp = game.xp_player3 as u64;
             
@@ -510,7 +510,7 @@ pub fn check_for_winner(game: &mut Game, current_time: i64) -> Result<()> {
         }
         
         // Player 4
-        if game.player4 != Pubkey::default() {
+        if game.player4 != Pubkey::default() && game.xp_timestamp_player4 > 0 {
             let time_diff = current_time - game.xp_timestamp_player4;
             let mut total_xp = game.xp_player4 as u64;
             

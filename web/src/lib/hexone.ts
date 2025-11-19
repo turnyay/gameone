@@ -1102,6 +1102,53 @@ export const IDL: Idl = {
       }
     }
   ],
+  "events": [
+    {
+      "name": "AttackResolved",
+      "fields": [
+        {
+          "name": "attackerTileColor",
+          "type": "u8",
+          "index": false
+        },
+        {
+          "name": "attackerResources",
+          "type": "u16",
+          "index": false
+        },
+        {
+          "name": "attackerRollResult",
+          "type": "u16",
+          "index": false
+        },
+        {
+          "name": "defenderTileColor",
+          "type": "u8",
+          "index": false
+        },
+        {
+          "name": "defenderResources",
+          "type": "u16",
+          "index": false
+        },
+        {
+          "name": "defenderRollResult",
+          "type": "u16",
+          "index": false
+        }
+      ]
+    },
+    {
+      "name": "GameStarted",
+      "fields": [
+        {
+          "name": "gameId",
+          "type": "u64",
+          "index": false
+        }
+      ]
+    }
+  ] as any,
   "errors": [
     {
       "code": 6000,
