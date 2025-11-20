@@ -64,6 +64,8 @@ const Game: React.FC = () => {
   const [liveFeedMessages, setLiveFeedMessages] = useState<Array<{ time: Date; message: string; type?: 'move' | 'attack' | 'add' | 'info' }>>([]);
   const connectionMessagesAddedRef = useRef(false);
   const gameMessagesAddedRef = useRef<string | null>(null);
+  const isUpdatingFromListenerRef = useRef(false);
+  const pendingTransactionRef = useRef<string | null>(null);
   
   // Standard function to add messages to live feed
   const addLiveFeedMessage = (message: string, type: 'move' | 'attack' | 'add' | 'info' = 'info') => {
@@ -128,7 +130,10 @@ const Game: React.FC = () => {
       }
 
       try {
-        console.log('Game account changed, updating...');
+        // Set flag to prevent fetchGame from updating React state
+        isUpdatingFromListenerRef.current = true;
+        
+        console.log('Game account changed, updating tiles only...');
         
         // Parse the new game data
         const newGameData = parseGameAccountData(gamePda, accountInfo.data);
@@ -150,8 +155,7 @@ const Game: React.FC = () => {
         };
 
         const simulatedTotal = calculateSimulatedTotal();
-        setSimulatedTotalResources(simulatedTotal);
-
+        
         // Calculate available resources for current player
         let playerResourcesSpent = 0;
         if (wallet.publicKey) {
@@ -166,20 +170,37 @@ const Game: React.FC = () => {
           }
         }
         const playerAvailableResources = Math.max(0, simulatedTotal - playerResourcesSpent);
-        setAvailableResources(playerAvailableResources);
-
-        // Update game state
-        setGame(newGameData);
         
-        // Update Phaser scene tiles incrementally
+        // Update only resource-related state (these don't cause full re-renders)
+        setSimulatedTotalResources(simulatedTotal);
+        setAvailableResources(playerAvailableResources);
+        
+        // Update Phaser scene tiles incrementally (this is the main update)
         if (gameRef.current) {
           const scene = gameRef.current.scene.getScene('MainScene') as any;
           if (scene && typeof scene.updateTiles === 'function') {
             scene.updateTiles(newGameData);
           }
         }
+        
+        // Update game state silently (without triggering re-renders of components that depend on game)
+        // Use a functional update to avoid unnecessary re-renders
+        setGame(prevGame => {
+          // Only update if tile data actually changed to prevent unnecessary re-renders
+          if (!prevGame || JSON.stringify(prevGame.tileData) !== JSON.stringify(newGameData.tileData)) {
+            return newGameData;
+          }
+          // Update other fields that might have changed (resources, XP, etc.)
+          return { ...prevGame, ...newGameData };
+        });
+        
+        // Reset flag after a short delay to allow any pending operations to complete
+        setTimeout(() => {
+          isUpdatingFromListenerRef.current = false;
+        }, 100);
       } catch (err) {
         console.error('Error handling account change:', err);
+        isUpdatingFromListenerRef.current = false;
       }
     };
 
@@ -471,10 +492,8 @@ const Game: React.FC = () => {
       
       addLiveFeedMessage(`${playerColorName} added ${resourcesToAdd} resources to tile`, 'add');
       
-      // Refresh game data to get updated resources
-      setTimeout(() => {
-        fetchGame();
-      }, 2000);
+      // Don't call fetchGame() - the account listener will handle the update
+      // This prevents double updates and page refreshes
     } catch (err) {
       console.error('Error adding resources:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to add resources';
@@ -784,15 +803,18 @@ const Game: React.FC = () => {
 
       console.log('Parsed game:', gameData);
       
-      // Update game state
-      const oldGame = game;
-      setGame(gameData);
-      
-      // Update Phaser scene tiles incrementally if game already exists
-      if (oldGame && gameRef.current && !skipLoading) {
-        const scene = gameRef.current.scene.getScene('MainScene') as any;
-        if (scene && typeof scene.updateTiles === 'function') {
-          scene.updateTiles(gameData);
+      // Update game state - but only if not updating from listener
+      // The listener will handle its own updates to avoid double renders
+      if (!isUpdatingFromListenerRef.current) {
+        const oldGame = game;
+        setGame(gameData);
+        
+        // Update Phaser scene tiles incrementally if game already exists
+        if (oldGame && gameRef.current && !skipLoading) {
+          const scene = gameRef.current.scene.getScene('MainScene') as any;
+          if (scene && typeof scene.updateTiles === 'function') {
+            scene.updateTiles(gameData);
+          }
         }
       }
       
@@ -1083,10 +1105,8 @@ const Game: React.FC = () => {
 
           addLiveFeedMessage(`${playerColorName} moved ${resourcesToMove} resources`, 'move');
 
-          // Refresh game data after successful transaction
-          setTimeout(() => {
-            fetchGame();
-          }, 1000);
+          // Don't call fetchGame() - the account listener will handle the update
+          // This prevents double updates and page refreshes
         } catch (err) {
           console.error('Error in move resources transaction:', err);
           throw err;
@@ -1472,8 +1492,7 @@ const Game: React.FC = () => {
             setAttackData(null);
             setAttackResolved(false);
             setAttackResult(null);
-            // Refresh game data after closing
-            fetchGame();
+            // Don't call fetchGame() - the account listener will handle the update
           }}
           attackerTileIndex={attackData.attackerTileIndex}
           defenderTileIndex={attackData.defenderTileIndex}
@@ -1703,11 +1722,22 @@ const Game: React.FC = () => {
                 // Fallback to game state comparison if log parsing fails
               }
 
-              // Fetch updated game data to get new resource counts
-              await fetchGame();
-
-              // Update attack result
-              const updatedGame = await client.fetchGame(game.publicKey.toString());
+              // Don't call fetchGame() - the account listener will handle the update
+              // The listener will update tiles automatically
+              // For attack results, we'll use the current game state which will be updated by the listener
+              
+              // Wait a bit for the listener to update the game state
+              await new Promise(resolve => setTimeout(resolve, 500));
+              
+              // Use current game state (updated by listener) or fallback to parsing from account
+              let updatedGame: GameAccount | null = game;
+              if (!updatedGame || !updatedGame.tileData) {
+                // Fallback: fetch directly if game state not available
+                if (game) {
+                  updatedGame = await client.fetchGame(game.publicKey.toString());
+                }
+              }
+              
               if (updatedGame) {
                 const newAttackerResources = updatedGame.tileData[attackData.attackerTileIndex]?.resourceCount || 0;
                 const newDefenderResources = updatedGame.tileData[attackData.defenderTileIndex]?.resourceCount || 0;
@@ -1808,8 +1838,8 @@ const Game: React.FC = () => {
               // Wait for transaction confirmation
               await connection.confirmTransaction(tx);
 
-              // Fetch updated game data
-              await fetchGame();
+              // Don't call fetchGame() - the account listener will handle the update
+              // The listener will update tiles automatically
 
               // Fetch defender account to get new attack start time
               let newAttackStartedAt = Math.floor(Date.now() / 1000);
@@ -1822,8 +1852,18 @@ const Game: React.FC = () => {
                 console.error('Error fetching defender account:', error);
               }
 
-              // Get updated tile data
-              const updatedGame = await client.fetchGame(game.publicKey.toString());
+              // Wait a bit for the listener to update the game state
+              await new Promise(resolve => setTimeout(resolve, 500));
+              
+              // Use current game state (updated by listener) or fallback to parsing from account
+              let updatedGame: GameAccount | null = game;
+              if (!updatedGame || !updatedGame.tileData) {
+                // Fallback: fetch directly if game state not available
+                if (game) {
+                  updatedGame = await client.fetchGame(game.publicKey.toString());
+                }
+              }
+              
               if (updatedGame) {
                 const updatedAttackerTile = updatedGame.tileData[attackData.attackerTileIndex];
                 const updatedDefenderTile = updatedGame.tileData[attackData.defenderTileIndex];

@@ -308,6 +308,11 @@ export const IDL: Idl = {
           "isSigner": false
         },
         {
+          "name": "player",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
           "name": "systemProgram",
           "isMut": false,
           "isSigner": false
@@ -2085,6 +2090,14 @@ export class HexoneClient {
     }
 
     try {
+      // Get player account PDA
+      const playerInfo = await this.getPlayerAccount();
+      if (!playerInfo) {
+        throw new Error('Player account not found. Please create a player account first.');
+      }
+
+      const { playerPda } = playerInfo;
+
       // Find game treasury PDA
       const [treasuryPda] = await PublicKey.findProgramAddress(
         [Buffer.from('game_treasury'), game.toBuffer()],
@@ -2097,6 +2110,7 @@ export class HexoneClient {
           wallet: this.provider.wallet.publicKey,
           game: game,
           gameTreasury: treasuryPda,
+          player: playerPda,
           systemProgram: SystemProgram.programId,
         })
         .rpc();
