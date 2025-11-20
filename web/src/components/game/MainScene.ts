@@ -275,4 +275,93 @@ export class MainScene extends Phaser.Scene {
       this.createGameBorder();
     }
   }
+
+  // Update tiles incrementally without reloading the whole board
+  updateTiles(newGameData: GameAccount) {
+    if (!newGameData || !newGameData.tileData) {
+      return;
+    }
+
+    const oldGameData = this.gameData;
+    if (!oldGameData || !oldGameData.tileData) {
+      // If we don't have old data, just update the gameData reference
+      this.gameData = newGameData;
+      MainScene.gameData = newGameData;
+      return;
+    }
+
+    const rows = newGameData.rows || this.gridSizeRows;
+    const columns = newGameData.columns || this.gridSizeColumns;
+
+    // Update each tile that has changed
+    for (let i = 0; i < newGameData.tileData.length; i++) {
+      const newTile = newGameData.tileData[i];
+      const oldTile = oldGameData.tileData[i];
+
+      // Check if tile data has changed
+      if (!oldTile || 
+          oldTile.color !== newTile.color || 
+          oldTile.resourceCount !== newTile.resourceCount) {
+        
+        // Calculate tile position
+        const y = Math.floor(i / columns);
+        const x = i % columns;
+
+        // Skip if tile is out of bounds or is a gap tile
+        if (y >= this.gridSizeRows || x >= this.gridSizeColumns ||
+            (y === this.gridSizeRows - 1 && x % 2 === 1)) {
+          continue;
+        }
+
+        const tile = this.tiles[y]?.[x];
+        if (!tile) {
+          continue;
+        }
+
+        // Update color if it changed
+        if (oldTile?.color !== newTile.color) {
+          // Remove from old player's territory
+          if (oldTile && oldTile.color > 0 && oldTile.color <= 4) {
+            const oldColorIndex = oldTile.color - 1;
+            const tileKey = `${x},${y}`;
+            HexTile.players[oldColorIndex]?.tiles.delete(tileKey);
+          }
+
+          // Add to new player's territory and set color
+          if (newTile.color > 0 && newTile.color <= 4) {
+            const newColorIndex = newTile.color - 1;
+            tile.setColor(newColorIndex);
+            // Add tile to player's territory
+            if (!HexTile.players[newColorIndex]) {
+              HexTile.players[newColorIndex] = {
+                colorIndex: newColorIndex,
+                tiles: new Set()
+              };
+            }
+            HexTile.players[newColorIndex].tiles.add(`${x},${y}`);
+          } else {
+            // Tile is now empty (color 0) - clear the color
+            (tile as any).originalColorIndex = null;
+            // Reset to default appearance
+            const hex = (tile as any).hex;
+            if (hex) {
+              hex.setFillStyle(0x000000); // Black
+              hex.setStrokeStyle(1, 0x808080); // Gray
+            }
+          }
+        }
+
+        // Update resources if they changed
+        if (oldTile?.resourceCount !== newTile.resourceCount) {
+          const newResources = newTile.resourceCount || 0;
+          // Use setResources method to update directly
+          tile.setResources(newResources);
+        }
+      }
+    }
+
+    // Update gameData reference
+    this.gameData = newGameData;
+    MainScene.gameData = newGameData;
+  }
 } 

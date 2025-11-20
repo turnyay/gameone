@@ -552,25 +552,41 @@ export class HexTile extends Phaser.GameObjects.Container {
 
   addResources(amount: number) {
     this.resources += amount;
+    this.updateResourceText();
+  }
+
+  setResources(amount: number) {
+    this.resources = amount;
+    this.updateResourceText();
+  }
+
+  private updateResourceText() {
     // Update visual representation of resources
     const text = this.getByName('resourceText') as Phaser.GameObjects.Text;
     const textColor = this.getResourceTextColor();
-    if (text) {
-      text.setText(this.resources.toString());
-      text.setColor(textColor);
-      text.setPosition(0, 0); // Ensure it stays centered
+    if (this.resources > 0) {
+      if (text) {
+        text.setText(this.resources.toString());
+        text.setColor(textColor);
+        text.setPosition(0, 0); // Ensure it stays centered
+      } else {
+        const newText = this.scene.add.text(0, 0, this.resources.toString(), {
+          color: textColor,
+          fontSize: '16px',
+          fontFamily: 'Arial',
+          fontStyle: 'bold'
+        });
+        newText.setOrigin(0.5, 0.5); // Center both horizontally and vertically
+        newText.setPosition(0, 0); // Explicitly center in container
+        newText.setName('resourceText');
+        newText.setDepth(10); // Ensure text is on top
+        this.add(newText);
+      }
     } else {
-      const newText = this.scene.add.text(0, 0, this.resources.toString(), {
-        color: textColor,
-        fontSize: '16px',
-        fontFamily: 'Arial',
-        fontStyle: 'bold'
-      });
-      newText.setOrigin(0.5, 0.5); // Center both horizontally and vertically
-      newText.setPosition(0, 0); // Explicitly center in container
-      newText.setName('resourceText');
-      newText.setDepth(10); // Ensure text is on top
-      this.add(newText);
+      // Remove text if resources are 0
+      if (text) {
+        text.destroy();
+      }
     }
   }
 

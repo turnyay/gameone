@@ -115,6 +115,96 @@ const Game: React.FC = () => {
     fetchGame();
   }, [connection, gameId]);
 
+  // Set up account listener for real-time updates
+  useEffect(() => {
+    if (!gameId || !connection || !game) return;
+
+    const gamePda = new PublicKey(gameId);
+    let listenerId: number | null = null;
+
+    const handleAccountChange = async (accountInfo: any) => {
+      if (!accountInfo || !accountInfo.data) {
+        return;
+      }
+
+      try {
+        console.log('Game account changed, updating...');
+        
+        // Parse the new game data
+        const newGameData = parseGameAccountData(gamePda, accountInfo.data);
+        
+        // Calculate simulated resources (same logic as fetchGame)
+        const gameDataAny = newGameData as any;
+        const totalResourcesAvailable = gameDataAny.totalResourcesAvailable || 0;
+        const availableResourcesTimestamp = gameDataAny.availableResourcesTimestamp || 0;
+        const resourcesPerMinute = gameDataAny.resourcesPerMinute || 10;
+
+        const calculateSimulatedTotal = () => {
+          const currentTime = Math.floor(Date.now() / 1000);
+          const timeDiff = currentTime - availableResourcesTimestamp;
+          if (timeDiff > 60) {
+            const minutesElapsed = Math.floor(timeDiff / 60);
+            return totalResourcesAvailable + (minutesElapsed * resourcesPerMinute);
+          }
+          return totalResourcesAvailable;
+        };
+
+        const simulatedTotal = calculateSimulatedTotal();
+        setSimulatedTotalResources(simulatedTotal);
+
+        // Calculate available resources for current player
+        let playerResourcesSpent = 0;
+        if (wallet.publicKey) {
+          const gamePlayers = gameDataAny.gamePlayers || [];
+          const currentPlayer = gamePlayers.find((p: any) => p && p.publicKey === wallet.publicKey?.toString());
+          if (currentPlayer) {
+            const playerIndex = currentPlayer.colorIndex;
+            if (playerIndex === 0) playerResourcesSpent = gameDataAny.resourcesSpentPlayer1 || 0;
+            else if (playerIndex === 1) playerResourcesSpent = gameDataAny.resourcesSpentPlayer2 || 0;
+            else if (playerIndex === 2) playerResourcesSpent = gameDataAny.resourcesSpentPlayer3 || 0;
+            else if (playerIndex === 3) playerResourcesSpent = gameDataAny.resourcesSpentPlayer4 || 0;
+          }
+        }
+        const playerAvailableResources = Math.max(0, simulatedTotal - playerResourcesSpent);
+        setAvailableResources(playerAvailableResources);
+
+        // Update game state
+        setGame(newGameData);
+        
+        // Update Phaser scene tiles incrementally
+        if (gameRef.current) {
+          const scene = gameRef.current.scene.getScene('MainScene') as any;
+          if (scene && typeof scene.updateTiles === 'function') {
+            scene.updateTiles(newGameData);
+          }
+        }
+      } catch (err) {
+        console.error('Error handling account change:', err);
+      }
+    };
+
+    // Subscribe to account changes
+    try {
+      const id = connection.onAccountChange(
+        gamePda,
+        handleAccountChange,
+        'confirmed'
+      );
+      listenerId = id;
+      console.log('Account listener set up for game:', gamePda.toString(), 'listener ID:', id);
+    } catch (err) {
+      console.error('Error setting up account listener:', err);
+    }
+
+    // Cleanup: remove listener on unmount
+    return () => {
+      if (listenerId !== null) {
+        connection.removeAccountChangeListener(listenerId);
+        console.log('Account listener removed for game:', gamePda.toString());
+      }
+    };
+  }, [gameId, connection, game, wallet.publicKey]);
+
   // Update simulated total resources every minute based on timestamp
   useEffect(() => {
     if (!game) return;
@@ -392,25 +482,10 @@ const Game: React.FC = () => {
     }
   };
 
-  const fetchGame = async () => {
-    if (!gameId) return;
-    try {
-      setLoading(true);
-      
-      // Find the PDA using the game ID
-      const gamePda: PublicKey = new PublicKey(gameId);
-      console.log('Game PDA:', gamePda.toString());
-
-      // Get game account data
-      const gameAccountInfo = await connection.getAccountInfo(gamePda);
-      if (!gameAccountInfo) {
-        throw new Error('Game account not found');
-      }
-
-      console.log('Game account data length:', gameAccountInfo.data.length);
-      
-      // Skip 8 bytes for Anchor discriminator
-      const data: Buffer = Buffer.from(gameAccountInfo.data.slice(8));
+  // Parse game account data from buffer
+  const parseGameAccountData = (gamePda: PublicKey, accountData: Buffer): GameAccount => {
+    // Skip 8 bytes for Anchor discriminator
+    const data: Buffer = Buffer.from(accountData.slice(8));
       console.log('Data after discriminator length:', data.length);
       
       // Read pubkeys (32 bytes each)
@@ -641,16 +716,45 @@ const Game: React.FC = () => {
       (gameData as any).simulatedXpPlayer3 = calculateSimulatedXP(xpPlayer3, xpTimestampPlayer3, tileCountColor3);
       (gameData as any).simulatedXpPlayer4 = calculateSimulatedXP(xpPlayer4, xpTimestampPlayer4, tileCountColor4);
 
+      // Store game ID value in gameData for later use
+      (gameData as any).gameIdValue = gameIdValue;
+
+      return gameData;
+    };
+
+  const fetchGame = async (skipLoading = false) => {
+    if (!gameId) return;
+    try {
+      if (!skipLoading) {
+        setLoading(true);
+      }
+      
+      // Find the PDA using the game ID
+      const gamePda: PublicKey = new PublicKey(gameId);
+      console.log('Game PDA:', gamePda.toString());
+
+      // Get game account data
+      const gameAccountInfo = await connection.getAccountInfo(gamePda);
+      if (!gameAccountInfo) {
+        throw new Error('Game account not found');
+      }
+
+      console.log('Game account data length:', gameAccountInfo.data.length);
+      
+      // Parse the game data
+      const gameData = parseGameAccountData(gamePda, gameAccountInfo.data);
+
       // Calculate simulated total resources based on timestamp
-      // Note: On-chain only updates when add_resources is called, so we simulate
-      // the same way - only add resources if more than 60 seconds have passed
+      const gameDataAny = gameData as any;
+      const totalResourcesAvailable = gameDataAny.totalResourcesAvailable || 0;
+      const availableResourcesTimestamp = gameDataAny.availableResourcesTimestamp || 0;
+      const resourcesPerMinute = gameDataAny.resourcesPerMinute || 10;
+
       const calculateSimulatedTotal = () => {
-        const currentTime = Math.floor(Date.now() / 1000); // Current time in seconds
+        const currentTime = Math.floor(Date.now() / 1000);
         const timeDiff = currentTime - availableResourcesTimestamp;
         if (timeDiff > 60) {
-          // Calculate the same way as on-chain: only full minutes elapsed
           const minutesElapsed = Math.floor(timeDiff / 60);
-          // Only add resources for full minutes, matching on-chain behavior
           return totalResourcesAvailable + (minutesElapsed * resourcesPerMinute);
         }
         return totalResourcesAvailable;
@@ -658,45 +762,48 @@ const Game: React.FC = () => {
 
       const simulatedTotal = calculateSimulatedTotal();
       setSimulatedTotalResources(simulatedTotal);
-      
-      // Log for debugging
-      console.log('Resource calculation:', {
-        totalResourcesAvailable,
-        availableResourcesTimestamp,
-        currentTime: Math.floor(Date.now() / 1000),
-        timeDiff: Math.floor(Date.now() / 1000) - availableResourcesTimestamp,
-        minutesElapsed: Math.floor((Math.floor(Date.now() / 1000) - availableResourcesTimestamp) / 60),
-        simulatedTotal,
-        resourcesPerMinute
-      });
 
       // Calculate available resources for current player
       let playerResourcesSpent = 0;
       if (wallet.publicKey) {
-        if (player1.equals(wallet.publicKey)) {
-          playerResourcesSpent = resourcesSpentPlayer1;
-        } else if (player2.equals(wallet.publicKey)) {
-          playerResourcesSpent = resourcesSpentPlayer2;
-        } else if (player3.equals(wallet.publicKey)) {
-          playerResourcesSpent = resourcesSpentPlayer3;
-        } else if (player4.equals(wallet.publicKey)) {
-          playerResourcesSpent = resourcesSpentPlayer4;
+        const gamePlayers = gameDataAny.gamePlayers || [];
+        const currentPlayer = gamePlayers.find((p: any) => p && p.publicKey === wallet.publicKey?.toString());
+        if (currentPlayer) {
+          const playerIndex = currentPlayer.colorIndex;
+          if (playerIndex === 0) playerResourcesSpent = gameDataAny.resourcesSpentPlayer1 || 0;
+          else if (playerIndex === 1) playerResourcesSpent = gameDataAny.resourcesSpentPlayer2 || 0;
+          else if (playerIndex === 2) playerResourcesSpent = gameDataAny.resourcesSpentPlayer3 || 0;
+          else if (playerIndex === 3) playerResourcesSpent = gameDataAny.resourcesSpentPlayer4 || 0;
         }
       }
       const playerAvailableResources = Math.max(0, simulatedTotal - playerResourcesSpent);
       setAvailableResources(playerAvailableResources);
 
       // Store game ID value
-      setGameIdValue(gameIdValue);
+      setGameIdValue(gameDataAny.gameIdValue);
 
       console.log('Parsed game:', gameData);
+      
+      // Update game state
+      const oldGame = game;
       setGame(gameData);
+      
+      // Update Phaser scene tiles incrementally if game already exists
+      if (oldGame && gameRef.current && !skipLoading) {
+        const scene = gameRef.current.scene.getScene('MainScene') as any;
+        if (scene && typeof scene.updateTiles === 'function') {
+          scene.updateTiles(gameData);
+        }
+      }
+      
       setError(null);
     } catch (err) {
       setError('Failed to fetch game');
       console.error('Error fetching game:', err);
     } finally {
-      setLoading(false);
+      if (!skipLoading) {
+        setLoading(false);
+      }
     }
   };
 
