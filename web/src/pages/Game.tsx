@@ -55,11 +55,47 @@ const Game: React.FC = () => {
     attackerWon: boolean;
     newAttackerResources: number;
     newDefenderResources: number;
+    newDefenderColor?: number; // Updated defender tile color (1-4 on-chain format)
+    tileTakenOver?: boolean; // True if tile changed ownership (full defeat)
     attackerRollResult?: number;
     defenderRollResult?: number;
     hitResourceCount?: number;
   } | null>(null);
-  const [liveFeedMessages, setLiveFeedMessages] = useState<Array<{ time: Date; message: string }>>([]);
+  const [liveFeedMessages, setLiveFeedMessages] = useState<Array<{ time: Date; message: string; type?: 'move' | 'attack' | 'add' | 'info' }>>([]);
+  const connectionMessagesAddedRef = useRef(false);
+  const gameMessagesAddedRef = useRef<string | null>(null);
+  
+  // Standard function to add messages to live feed
+  const addLiveFeedMessage = (message: string, type: 'move' | 'attack' | 'add' | 'info' = 'info') => {
+    const now = new Date();
+    setLiveFeedMessages(prev => {
+      // Add new message at the end (bottom), old messages shift up
+      const newMessages = [...prev, { time: now, message, type }];
+      // Keep only last 100 messages to prevent memory issues
+      return newMessages.slice(-100);
+    });
+  };
+  
+  // Initialize live feed messages on page load (only once)
+  useEffect(() => {
+    if (!connectionMessagesAddedRef.current) {
+      connectionMessagesAddedRef.current = true;
+      addLiveFeedMessage('Connecting to the Solana blockchain...', 'info');
+      addLiveFeedMessage('Connected to the Solana blockchain', 'info');
+    }
+  }, []); // Empty dependency array - only run once on mount
+  
+  // Add game-specific messages when game loads (only once per game)
+  useEffect(() => {
+    if (game) {
+      const gameKey = game.publicKey?.toString();
+      if (gameKey && gameMessagesAddedRef.current !== gameKey) {
+        gameMessagesAddedRef.current = gameKey;
+        addLiveFeedMessage('Loading gameboard...', 'info');
+        addLiveFeedMessage('Ready for gameplay', 'info');
+      }
+    }
+  }, [game?.publicKey?.toString()]);
   
   // Set up HexoneClient - same pattern as SiclubClient
   const client = useMemo(() => {
@@ -330,6 +366,20 @@ const Game: React.FC = () => {
       await connection.confirmTransaction(tx, 'confirmed');
 
       console.log('Add resources transaction:', tx);
+      
+      // Get player color name
+      const gameData = game as any;
+      let playerColorName = 'Unknown';
+      if (gameData.gamePlayers && wallet.publicKey) {
+        const walletPubkeyStr = wallet.publicKey.toString();
+        const currentPlayer = gameData.gamePlayers.find((p: any) => p && p.publicKey === walletPubkeyStr);
+        if (currentPlayer) {
+          const playerIndex = currentPlayer.colorIndex;
+          playerColorName = ['Red', 'Yellow', 'Green', 'Blue'][playerIndex] || 'Unknown';
+        }
+      }
+      
+      addLiveFeedMessage(`${playerColorName} added ${resourcesToAdd} resources to tile`, 'add');
       
       // Refresh game data to get updated resources
       setTimeout(() => {
@@ -739,7 +789,7 @@ const Game: React.FC = () => {
                 const gameId = data.gameId ?? data.game_id;
                 const message = `Game #${gameId} has started!`;
                 console.log(`[GAME STARTED] ${message}`);
-                setLiveFeedMessages(prev => [...prev, { time: new Date(), message }]);
+                addLiveFeedMessage(message, 'info');
                 break;
               }
             }
@@ -898,6 +948,21 @@ const Game: React.FC = () => {
             throw new Error('Client not initialized');
           }
 
+          // Get player color name
+          const gameData = game as any;
+          let playerColorName = 'Unknown';
+          if (gameData.gamePlayers && wallet.publicKey) {
+            const walletPubkeyStr = wallet.publicKey.toString();
+            const currentPlayer = gameData.gamePlayers.find(
+              (p: { publicKey: string; colorIndex: number } | null) => 
+                p && p.publicKey === walletPubkeyStr
+            );
+            if (currentPlayer) {
+              const playerIndex = currentPlayer.colorIndex;
+              playerColorName = ['Red', 'Yellow', 'Green', 'Blue'][playerIndex] || 'Unknown';
+            }
+          }
+
           // Use client method instead of program.methods directly
           const tx = await client.moveResources(
             game.publicKey,
@@ -908,6 +973,8 @@ const Game: React.FC = () => {
 
           // Wait for transaction confirmation
           await connection.confirmTransaction(tx);
+
+          addLiveFeedMessage(`${playerColorName} moved ${resourcesToMove} resources`, 'move');
 
           // Refresh game data after successful transaction
           setTimeout(() => {
@@ -1327,6 +1394,8 @@ const Game: React.FC = () => {
           attackerRollResult={attackResult?.attackerRollResult}
           defenderRollResult={attackResult?.defenderRollResult}
           hitResourceCount={attackResult?.hitResourceCount}
+          newDefenderColor={attackResult?.newDefenderColor}
+          tileTakenOver={attackResult?.tileTakenOver}
           onResolveAttack={async () => {
             if (!client || !wallet.publicKey || !game || !attackData) {
               throw new Error('Wallet not connected or game not loaded');
@@ -1578,11 +1647,16 @@ const Game: React.FC = () => {
                   }
                 }
 
+                // Check if tile was fully taken over (tile color changed to attacker's color)
+                const tileTakenOver = attackerWon && newDefenderColor === (attackData.attackerColor + 1) && newDefenderColor !== (attackData.defenderColor + 1);
+
                 setAttackResolved(true);
                 setAttackResult({
                   attackerWon,
                   newAttackerResources,
                   newDefenderResources,
+                  newDefenderColor, // Pass the updated defender color
+                  tileTakenOver, // Pass whether tile was fully taken over
                   attackerRollResult,
                   defenderRollResult,
                   hitResourceCount
@@ -1591,19 +1665,27 @@ const Game: React.FC = () => {
                 // Add attack result message to live feed
                 const attackerColorName = ['Red', 'Yellow', 'Green', 'Blue'][attackData.attackerColor] || 'Unknown';
                 const defenderColorName = ['Red', 'Yellow', 'Green', 'Blue'][attackData.defenderColor] || 'Unknown';
-                const winnerName = attackerWon ? attackerColorName : defenderColorName;
-                const rollText = attackerRollResult !== undefined && defenderRollResult !== undefined
-                  ? ` (${attackerColorName} rolled ${attackerRollResult}, ${defenderColorName} rolled ${defenderRollResult})`
-                  : '';
-                const message = `${attackerColorName} attacked ${defenderColorName} - ${winnerName} wins!${rollText}`;
-                setLiveFeedMessages(prev => [...prev, { time: new Date(), message }]);
+                
+                let message: string;
+                if (attackerRollResult !== undefined && defenderRollResult !== undefined) {
+                  if (attackerWon) {
+                    message = `${attackerColorName} (${attackerRollResult}) won against ${defenderColorName} (${defenderRollResult})`;
+                  } else {
+                    message = `${attackerColorName} (${attackerRollResult}) lost to ${defenderColorName} (${defenderRollResult})`;
+                  }
+                } else {
+                  // Fallback if roll results are not available
+                  const winnerName = attackerWon ? attackerColorName : defenderColorName;
+                  message = `${attackerColorName} attacked ${defenderColorName} - ${winnerName} wins!`;
+                }
+                addLiveFeedMessage(message, 'attack');
               }
             } catch (err) {
               console.error('Error resolving attack:', err);
               throw err;
             }
           }}
-          onAttackAgain={async () => {
+          onAttackAgain={attackResult?.attackerWon ? undefined : async () => {
             if (!client || !wallet.publicKey || !game || !attackData) {
               throw new Error('Wallet not connected or game not loaded');
             }

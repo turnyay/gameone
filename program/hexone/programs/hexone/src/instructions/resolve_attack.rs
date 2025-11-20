@@ -335,6 +335,18 @@ pub fn resolve_attack(ctx: Context<ResolveAttack>) -> Result<()> {
         result.max(1)
     };
     
+    // CRITICAL: Cap the hit to the minimum of attacker and defender resources
+    // This ensures that:
+    // - If attacker has 1 resource, max damage is 1
+    // - If defender has 1 resource, max damage is 1
+    // - If both have 3 resources, max damage can be up to 3 (or calculated_hit, whichever is lower)
+    let attacker_resources_u64 = attacker_resources_before as u64;
+    let defender_resources_u64 = defender_resources_before as u64;
+    let max_possible_hit = attacker_resources_u64.min(defender_resources_u64);
+    
+    // Cap calculated_hit to the minimum of both players' resources
+    let capped_hit = calculated_hit.min(max_possible_hit);
+    
     // Determine loser's current resources
     let loser_resources = if attacker_won {
         defender_resources_before as u64
@@ -343,8 +355,8 @@ pub fn resolve_attack(ctx: Context<ResolveAttack>) -> Result<()> {
     };
     
     // Ensure minimum hit is 1 (loser must always lose at least 1)
-    // If loser has fewer resources than calculated hit, use their resources (but at least 1)
-    let hit_resource_count = if calculated_hit >= loser_resources {
+    // If loser has fewer resources than capped hit, use their resources (but at least 1)
+    let hit_resource_count = if capped_hit >= loser_resources {
         // Use all loser's resources (will trigger tile transfer)
         // But ensure at least 1 is lost if they have any resources
         if loser_resources > 0 {
@@ -353,8 +365,8 @@ pub fn resolve_attack(ctx: Context<ResolveAttack>) -> Result<()> {
             1 // Fallback: if somehow they have 0, still lose 1 (shouldn't happen)
         }
     } else {
-        // Use calculated hit, which is already at least 1 from the formula
-        calculated_hit
+        // Use capped hit, which is already at least 1 from the formula
+        capped_hit
     };
     
     // Final safety check: ensure hit_resource_count is always at least 1

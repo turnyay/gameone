@@ -92,6 +92,11 @@ pub fn join_game(ctx: Context<JoinGame>, game_id: u64) -> Result<()> {
     // Update player status
     player.player_status = PLAYER_STATUS_PLAYING;
     player.last_game = Some(ctx.accounts.game.key());
+    
+    // Increment games played count
+    player.games_played = player.games_played
+        .checked_add(1)
+        .ok_or(HexoneError::Invalid)?;
 
     // Update game state if all players have joined
     if game.player1 != Pubkey::default() && 

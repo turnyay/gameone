@@ -25,7 +25,7 @@ interface UIProps {
   programId?: PublicKey;
   game?: any;
   onClaimPrize?: () => Promise<void>;
-  liveFeedMessages?: Array<{ time: Date; message: string }>;
+  liveFeedMessages?: Array<{ time: Date; message: string; type?: 'move' | 'attack' | 'add' | 'info' }>;
 }
 
 const getColorFromIndex = (index: number) => {
@@ -1056,10 +1056,13 @@ export const UI: React.FC<UIProps> = ({
           overflowY: 'auto',
           fontFamily: 'monospace',
           fontSize: '12px',
-          lineHeight: '1.5'
+          lineHeight: '1.5',
+          display: 'flex',
+          flexDirection: 'column-reverse' // Reverse so new messages appear at bottom
         }}>
           {(() => {
             const formatTime = (date: Date) => {
+              // Use the stored time, don't recalculate
               return date.toLocaleTimeString('en-US', { 
                 hour12: false,
                 hour: '2-digit',
@@ -1068,23 +1071,92 @@ export const UI: React.FC<UIProps> = ({
               });
             };
             
-            const now = new Date();
-            const initialMessages = [
-              { time: new Date(now.getTime() - 3000), message: 'Connected to Solana blockchain...' },
-              { time: new Date(now.getTime() - 2000), message: 'Loaded game board ok' },
-              { time: new Date(now.getTime() - 1000), message: 'Initialized player resources' },
-              { time: new Date(now.getTime() - 0), message: 'Ready for gameplay' }
+            // Get player color names and hex colors
+            const playerColors = [
+              { name: 'Red', hex: '#ff0000' },
+              { name: 'Yellow', hex: '#ffff00' },
+              { name: 'Green', hex: '#00ff00' },
+              { name: 'Blue', hex: '#0000ff' }
             ];
             
-            const allMessages = [...initialMessages, ...liveFeedMessages].sort((a, b) => a.time.getTime() - b.time.getTime());
+            // Function to colorize message text
+            const colorizeMessage = (message: string, type: 'move' | 'attack' | 'add' | 'info' = 'info') => {
+              // Determine base color based on type
+              let baseColor = '#ffa500'; // default orange for move/info
+              if (type === 'attack') {
+                baseColor = '#cc6600'; // dark orange
+              } else if (type === 'add') {
+                baseColor = '#90ee90'; // light green
+              }
+              
+              // Build regex to match all player names
+              const playerNames = playerColors.map(p => p.name).join('|');
+              const regex = new RegExp(`(${playerNames})`, 'gi');
+              
+              // Split message by player names
+              const parts: Array<{ text: string; color: string }> = [];
+              let lastIndex = 0;
+              let match;
+              
+              // Find all player name matches
+              while ((match = regex.exec(message)) !== null) {
+                // Add text before match
+                if (match.index > lastIndex) {
+                  const textBefore = message.substring(lastIndex, match.index);
+                  if (textBefore) {
+                    parts.push({ text: textBefore, color: baseColor });
+                  }
+                }
+                
+                // Add player name with its color
+                const matchedName = match[1];
+                const player = playerColors.find(p => p.name.toLowerCase() === matchedName.toLowerCase());
+                if (player) {
+                  parts.push({ text: matchedName, color: player.hex });
+                } else {
+                  parts.push({ text: matchedName, color: baseColor });
+                }
+                
+                lastIndex = regex.lastIndex;
+              }
+              
+              // Add remaining text after last match
+              if (lastIndex < message.length) {
+                const textAfter = message.substring(lastIndex);
+                if (textAfter) {
+                  parts.push({ text: textAfter, color: baseColor });
+                }
+              }
+              
+              // If no player names found, use base color for entire message
+              if (parts.length === 0) {
+                parts.push({ text: message, color: baseColor });
+              }
+              
+              return parts;
+            };
+            
+            // Messages are already in chronological order, but we reverse for display
+            // so newest appear at bottom
+            const allMessages = [...liveFeedMessages].reverse();
             
             return (
               <>
-                {allMessages.map((msg, index) => (
-                  <div key={index} style={{ color: '#ffa500', textAlign: 'left', paddingLeft: '0' }}>
-                    [{formatTime(msg.time)}] {msg.message}
-                  </div>
-                ))}
+                {allMessages.map((msg, index) => {
+                  const timeStr = formatTime(msg.time);
+                  const parts = colorizeMessage(msg.message, msg.type);
+                  
+                  return (
+                    <div key={index} style={{ textAlign: 'left', paddingLeft: '0', marginBottom: '2px' }}>
+                      <span style={{ color: '#888' }}>[{timeStr}]</span>{' '}
+                      {parts.map((part, partIndex) => (
+                        <span key={partIndex} style={{ color: part.color }}>
+                          {part.text}
+                        </span>
+                      ))}
+                    </div>
+                  );
+                })}
               </>
             );
           })()}

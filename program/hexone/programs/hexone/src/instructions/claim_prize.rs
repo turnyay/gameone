@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
 use crate::state::game::{Game, GAME_STATE_WINNER_FOUND_NOT_PAID_OUT, GAME_STATE_IN_PROGRESS, calculate_tier_bonus_xp, check_for_winner};
+use crate::state::player::Player;
 use crate::error::HexoneError;
 
 #[derive(Accounts)]
@@ -17,6 +18,14 @@ pub struct ClaimPrize<'info> {
         bump,
     )]
     pub game_treasury: SystemAccount<'info>,
+    
+    #[account(
+        mut,
+        seeds = [b"player", wallet.key().as_ref()],
+        bump = player.bump,
+        constraint = player.wallet == wallet.key() @ HexoneError::PlayerNotAuthorized,
+    )]
+    pub player: Account<'info, Player>,
     
     pub system_program: Program<'info, System>,
 }
@@ -271,6 +280,12 @@ pub fn claim_prize(ctx: Context<ClaimPrize>) -> Result<()> {
     
     // Update game state to completed (winner found and paid)
     game.game_state = crate::state::game::GAME_STATE_COMPLETED;
+    
+    // Increment games won count for the winner
+    let player = &mut ctx.accounts.player;
+    player.games_won = player.games_won
+        .checked_add(1)
+        .ok_or(HexoneError::Invalid)?;
     
     Ok(())
 }

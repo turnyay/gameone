@@ -24,6 +24,8 @@ interface AttackPopupProps {
   attackerRollResult?: number; // 0-999
   defenderRollResult?: number; // 0-999
   hitResourceCount?: number; // Number of resources lost
+  newDefenderColor?: number; // Updated defender tile color (1-4 on-chain format)
+  tileTakenOver?: boolean; // True if tile changed ownership (full defeat)
 }
 
 const getColorName = (colorIndex: number): string => {
@@ -96,7 +98,9 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
   newDefenderResources,
   attackerRollResult,
   defenderRollResult,
-  hitResourceCount
+  hitResourceCount,
+  newDefenderColor,
+  tileTakenOver = false
 }) => {
   const [timeRemaining, setTimeRemaining] = useState(3);
   const [canResolve, setCanResolve] = useState(false);
@@ -175,7 +179,13 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
   const attackerColorName = getColorName(attackerColor);
   const defenderColorName = getColorName(defenderColor);
   const attackerColorHex = getColorHex(attackerColor);
-  const defenderColorHex = getColorHex(defenderColor);
+  
+  // When attacker wins, use attacker's color for defender tile; otherwise use original defender color
+  // newDefenderColor is in 1-4 format, convert to 0-3 for getColorHex
+  const defenderColorToDisplay = showResult && attackerWon && newDefenderColor 
+    ? newDefenderColor - 1 
+    : defenderColor;
+  const defenderColorHex = getColorHex(defenderColorToDisplay);
 
   return (
     <div
@@ -282,7 +292,9 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
               />
             </div>
             <div style={{ fontSize: '14px', color: '#888' }}>
-              {defenderColorName} Team
+              {showResult && attackerWon && newDefenderColor 
+                ? getColorName(newDefenderColor - 1) + ' Team' 
+                : defenderColorName + ' Team'}
             </div>
             <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
               Tile ({defenderTileX}, {defenderTileY})
@@ -357,7 +369,11 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
                 fontWeight: 'bold'
               }}
             >
-              {attackerWon ? `${attackerColorName} Team Wins!` : `${defenderColorName} Team Wins!`}
+              {attackerWon 
+                ? (tileTakenOver 
+                    ? `${attackerColorName} defeated ${defenderColorName} and moved ${hitResourceCount || 0} resources`
+                    : `${attackerColorName} Team Wins!`)
+                : `${defenderColorName} Team Wins!`}
             </div>
           </div>
         )}
