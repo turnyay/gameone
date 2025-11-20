@@ -161,23 +161,23 @@ const Games: React.FC = () => {
   }, [wallet.publicKey, connection, client]);
 
   // Function to fetch hotwallet balance
-  const fetchHotwalletBalance = async () => {
-    if (!playerAccount?.hotwallet || !connection) {
-      setHotwalletBalance(null);
-      return;
-    }
+    const fetchHotwalletBalance = async () => {
+      if (!playerAccount?.hotwallet || !connection) {
+        setHotwalletBalance(null);
+        return;
+      }
 
-    try {
-      const balanceLamports = await connection.getBalance(playerAccount.hotwallet);
-      // Convert lamports to SOL - store as number but we'll format on display
-      // Divide by 1e9 to get SOL, keeping full precision
-      const balanceSOL = balanceLamports / 1e9;
-      setHotwalletBalance(balanceSOL);
-    } catch (err) {
-      console.error('Error fetching hotwallet balance:', err);
-      setHotwalletBalance(null);
-    }
-  };
+      try {
+        const balanceLamports = await connection.getBalance(playerAccount.hotwallet);
+        // Convert lamports to SOL - store as number but we'll format on display
+        // Divide by 1e9 to get SOL, keeping full precision
+        const balanceSOL = balanceLamports / 1e9;
+        setHotwalletBalance(balanceSOL);
+      } catch (err) {
+        console.error('Error fetching hotwallet balance:', err);
+        setHotwalletBalance(null);
+      }
+    };
 
   // Fetch hotwallet balance when player account is loaded
   useEffect(() => {
@@ -718,12 +718,16 @@ const Games: React.FC = () => {
         </div>
       </div>
 
-      <div style={{ 
-        width: '100%', 
-        minHeight: 'calc(100vh - 64px)',
-        backgroundColor: '#1a1a1a',
-        padding: '40px 20px'
-      }}>
+      <div 
+        className="games-scroll-container"
+        style={{ 
+          width: '100%', 
+          minHeight: 'calc(100vh - 64px)',
+          backgroundColor: '#1a1a1a',
+          padding: '40px 20px',
+          overflowY: 'auto',
+          height: 'calc(100vh - 64px)'
+        }}>
         {/* Player Account Section */}
         {wallet.connected && (
           <div style={{ marginBottom: '30px' }}>
@@ -746,15 +750,15 @@ const Games: React.FC = () => {
                   justifyContent: 'space-between', 
                   alignItems: 'center',
                   marginBottom: '16px'
+              }}>
+                <h3 style={{ 
+                  fontSize: '20px', 
+                  fontWeight: 'bold', 
+                  color: '#ffffff',
+                  margin: 0
                 }}>
-                  <h3 style={{ 
-                    fontSize: '20px', 
-                    fontWeight: 'bold', 
-                    color: '#ffffff',
-                    margin: 0
-                  }}>
-                    My Player
-                  </h3>
+                  My Player
+                </h3>
                   {playerAccount?.hotwallet && (
                     <button
                       onClick={handleTransferToHotwallet}
@@ -771,7 +775,7 @@ const Games: React.FC = () => {
                         opacity: (!wallet.connected || transferringToHotwallet || !playerAccount?.hotwallet) ? 0.6 : 1
                       }}
                     >
-                      {transferringToHotwallet ? 'Transferring...' : 'Add 0.05 SOL'}
+                      {transferringToHotwallet ? 'Transferring...' : 'Add 0.05 SOL to Hotwallet'}
                     </button>
                   )}
                 </div>
@@ -783,24 +787,27 @@ const Games: React.FC = () => {
                   color: '#ffffff'
                 }}>
                   <div style={{ marginBottom: '16px' }}>
-                    <h4 style={{ 
-                      fontSize: '18px', 
-                      fontWeight: 'bold', 
-                      marginBottom: '8px',
-                      color: '#f97316'
-                    }}>
-                      {playerAccount.name}
-                    </h4>
+                    {playerAccount?.hotwallet && (
+                      <div style={{ 
+                        fontSize: '14px', 
+                        color: '#f97316',
+                        fontFamily: 'monospace',
+                        wordBreak: 'break-all',
+                        marginBottom: '4px'
+                      }}>
+                        Hotwallet: {playerAccount.hotwallet.toString()} ({hotwalletBalance !== null ? hotwalletBalance.toFixed(4) : '0.0000'} SOL)
+                      </div>
+                    )}
                     <div style={{ 
                       fontSize: '12px', 
                       color: '#888',
                       fontFamily: 'monospace',
-                      wordBreak: 'break-all'
+                      wordBreak: 'break-all',
+                      marginTop: '8px'
                     }}>
-                      {playerAccount.publicKey.toString()}
+                      Player account: {playerAccount.publicKey.toString()}
                     </div>
                   </div>
-                  
                   <div style={{ 
                     display: 'grid',
                     gridTemplateColumns: 'repeat(2, 1fr)',
@@ -833,41 +840,6 @@ const Games: React.FC = () => {
                       </span>
                     </div>
                   </div>
-                  
-                  {/* Hotwallet Section */}
-                  {playerAccount.hotwallet && (
-                    <div style={{ 
-                      marginTop: '20px', 
-                      paddingTop: '20px', 
-                      borderTop: '1px solid #333' 
-                    }}>
-                      <div style={{ 
-                        fontSize: '14px', 
-                        fontWeight: 'bold', 
-                        color: '#f97316',
-                        marginBottom: '12px'
-                      }}>
-                        Hotwallet
-                      </div>
-                      <div style={{ 
-                        fontSize: '12px', 
-                        color: '#888',
-                        fontFamily: 'monospace',
-                        wordBreak: 'break-all',
-                        marginBottom: '8px'
-                      }}>
-                        {playerAccount.hotwallet.toString()}
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
-                        <span style={{ color: '#888' }}>Balance:</span>
-                        <span style={{ color: '#ffa500' }}>
-                          {hotwalletBalance !== null 
-                            ? `${hotwalletBalance.toFixed(9).replace(/\.?0+$/, '')} SOL`
-                            : 'Loading...'}
-                        </span>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             ) : (
@@ -1089,6 +1061,26 @@ const Games: React.FC = () => {
           </div>
         )}
       </div>
+      <style>{`
+        .games-scroll-container::-webkit-scrollbar {
+          width: 8px;
+        }
+        .games-scroll-container::-webkit-scrollbar-track {
+          background: #1a1a1a;
+        }
+        .games-scroll-container::-webkit-scrollbar-thumb {
+          background: #444;
+          border-radius: 4px;
+        }
+        .games-scroll-container::-webkit-scrollbar-thumb:hover {
+          background: #555;
+        }
+        /* Firefox */
+        .games-scroll-container {
+          scrollbar-width: thin;
+          scrollbar-color: #444 #1a1a1a;
+        }
+      `}</style>
     </div>
   );
 };

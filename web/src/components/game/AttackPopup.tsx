@@ -255,16 +255,16 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
                 (() => {
                   const actualLoss = attackerResources - (newAttackerResources ?? attackerResources);
                   return actualLoss > 0 ? (
-                    <div
-                      style={{
-                        color: '#ff0000',
-                        fontSize: '18px',
-                        fontWeight: 'bold',
-                        animation: 'fadeIn 0.5s'
-                      }}
-                    >
+                <div
+                  style={{
+                    color: '#ff0000',
+                    fontSize: '18px',
+                    fontWeight: 'bold',
+                    animation: 'fadeIn 0.5s'
+                  }}
+                >
                       -{actualLoss}
-                    </div>
+                </div>
                   ) : null;
                 })()
               )}
@@ -305,16 +305,16 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
                 (() => {
                   const actualLoss = defenderResources - (newDefenderResources ?? defenderResources);
                   return actualLoss > 0 ? (
-                    <div
-                      style={{
-                        color: '#ff0000',
-                        fontSize: '18px',
-                        fontWeight: 'bold',
-                        animation: 'fadeIn 0.5s'
-                      }}
-                    >
+                <div
+                  style={{
+                    color: '#ff0000',
+                    fontSize: '18px',
+                    fontWeight: 'bold',
+                    animation: 'fadeIn 0.5s'
+                  }}
+                >
                       -{actualLoss}
-                    </div>
+                </div>
                   ) : null;
                 })()
               )}
