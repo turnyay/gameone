@@ -56,6 +56,7 @@ const Games: React.FC = () => {
   const [treasuryBalances, setTreasuryBalances] = useState<Map<string, number>>(new Map());
   const [hotwalletBalance, setHotwalletBalance] = useState<number | null>(null);
   const [transferringToHotwallet, setTransferringToHotwallet] = useState(false);
+  const [withdrawingFromHotwallet, setWithdrawingFromHotwallet] = useState(false);
 
   // Set up HexoneClient - same pattern as SiclubClient
   const client = useMemo(() => {
@@ -237,6 +238,91 @@ const Games: React.FC = () => {
       setError(errorMessage);
     } finally {
       setTransferringToHotwallet(false);
+    }
+  };
+
+  const handleWithdrawFromHotwallet = async () => {
+    if (!wallet.publicKey || !playerAccount?.hotwallet || !connection) {
+      setError('Wallet not connected or hotwallet not available');
+      return;
+    }
+
+    if (hotwalletBalance === null || hotwalletBalance <= 0) {
+      setError('No balance to withdraw from hotwallet');
+      return;
+    }
+
+    setWithdrawingFromHotwallet(true);
+    setError(null);
+
+    try {
+      // Get hotwallet keypair from localStorage
+      const hotwallet = getOrCreateHotwallet(wallet.publicKey.toString());
+      
+      // Verify the hotwallet matches the player account's hotwallet
+      if (!hotwallet.publicKey.equals(playerAccount.hotwallet)) {
+        throw new Error('Hotwallet keypair does not match player account hotwallet');
+      }
+
+      // Get current balance
+      const balanceLamports = await connection.getBalance(hotwallet.publicKey);
+      
+      if (balanceLamports === 0) {
+        setError('No balance to withdraw');
+        return;
+      }
+      
+      // Transaction fee (typically around 5000 lamports)
+      const transactionFee = 5000;
+      
+      // Calculate how much we need to keep: rent exemption + transaction fee
+      const minimumToKeep = transactionFee;
+      
+      // Calculate transfer amount: all balance minus what we need to keep
+      const transferAmount = balanceLamports - minimumToKeep;
+      
+      if (transferAmount <= 0) {
+        setError(`Balance too low to withdraw. Need at least ${(minimumToKeep / 1e9).toFixed(9)} SOL for rent exemption and fees.`);
+        return;
+      }
+
+      // Create transfer instruction
+      const transaction = new Transaction().add(
+        SystemProgram.transfer({
+          fromPubkey: hotwallet.publicKey,
+          toPubkey: wallet.publicKey,
+          lamports: transferAmount,
+        })
+      );
+
+      // Get recent blockhash
+      const { blockhash } = await connection.getLatestBlockhash('confirmed');
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = hotwallet.publicKey;
+
+      // Sign with hotwallet
+      transaction.sign(hotwallet);
+
+      // Send and confirm transaction
+      const signature = await connection.sendRawTransaction(transaction.serialize(), {
+        skipPreflight: false,
+      });
+      await connection.confirmTransaction(signature, 'confirmed');
+
+      console.log(`[WITHDRAW] Successfully withdrew ${transferAmount / 1e9} SOL from hotwallet:`, signature);
+
+      // Refresh balances
+      await fetchHotwalletBalance();
+      if (wallet.publicKey) {
+        const newBalance = await connection.getBalance(wallet.publicKey);
+        setBalance(newBalance / 1e9);
+      }
+    } catch (err) {
+      console.error('Error withdrawing SOL from hotwallet:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to withdraw SOL from hotwallet';
+      setError(errorMessage);
+    } finally {
+      setWithdrawingFromHotwallet(false);
     }
   };
 
@@ -760,23 +846,42 @@ const Games: React.FC = () => {
                   My Player
                 </h3>
                   {playerAccount?.hotwallet && (
-                    <button
-                      onClick={handleTransferToHotwallet}
-                      disabled={!wallet.connected || transferringToHotwallet || !playerAccount?.hotwallet}
-                      style={{
-                        padding: '6px 12px',
-                        backgroundColor: transferringToHotwallet ? '#666' : '#f97316',
-                        color: '#ffffff',
-                        border: 'none',
-                        borderRadius: '4px',
-                        fontSize: '12px',
-                        fontWeight: 'bold',
-                        cursor: (!wallet.connected || transferringToHotwallet || !playerAccount?.hotwallet) ? 'not-allowed' : 'pointer',
-                        opacity: (!wallet.connected || transferringToHotwallet || !playerAccount?.hotwallet) ? 0.6 : 1
-                      }}
-                    >
-                      {transferringToHotwallet ? 'Transferring...' : 'Add 0.05 SOL to Hotwallet'}
-                    </button>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <button
+                        onClick={handleTransferToHotwallet}
+                        disabled={!wallet.connected || transferringToHotwallet || !playerAccount?.hotwallet}
+                        style={{
+                          padding: '6px 12px',
+                          backgroundColor: transferringToHotwallet ? '#666' : '#f97316',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: '4px',
+                          fontSize: '12px',
+                          fontWeight: 'bold',
+                          cursor: (!wallet.connected || transferringToHotwallet || !playerAccount?.hotwallet) ? 'not-allowed' : 'pointer',
+                          opacity: (!wallet.connected || transferringToHotwallet || !playerAccount?.hotwallet) ? 0.6 : 1
+                        }}
+                      >
+                        {transferringToHotwallet ? 'Transferring...' : 'Add 0.05 SOL to Hotwallet'}
+                      </button>
+                      <button
+                        onClick={handleWithdrawFromHotwallet}
+                        disabled={!wallet.connected || withdrawingFromHotwallet || !playerAccount?.hotwallet || !hotwalletBalance || hotwalletBalance <= 0}
+                        style={{
+                          padding: '6px 12px',
+                          backgroundColor: withdrawingFromHotwallet ? '#666' : '#4a5568',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: '4px',
+                          fontSize: '12px',
+                          fontWeight: 'bold',
+                          cursor: (!wallet.connected || withdrawingFromHotwallet || !playerAccount?.hotwallet || !hotwalletBalance || hotwalletBalance <= 0) ? 'not-allowed' : 'pointer',
+                          opacity: (!wallet.connected || withdrawingFromHotwallet || !playerAccount?.hotwallet || !hotwalletBalance || hotwalletBalance <= 0) ? 0.6 : 1
+                        }}
+                      >
+                        {withdrawingFromHotwallet ? 'Withdrawing...' : 'Withdraw from Hotwallet'}
+                      </button>
+                    </div>
                   )}
                 </div>
                 <div style={{
@@ -795,7 +900,7 @@ const Games: React.FC = () => {
                         wordBreak: 'break-all',
                         marginBottom: '4px'
                       }}>
-                        Hotwallet: {playerAccount.hotwallet.toString()} ({hotwalletBalance !== null ? hotwalletBalance.toFixed(4) : '0.0000'} SOL)
+                        Hotwallet: {playerAccount.hotwallet.toString()} ({hotwalletBalance !== null ? hotwalletBalance.toFixed(9).replace(/\.?0+$/, '') : '0'} SOL)
                       </div>
                     )}
                     <div style={{ 
