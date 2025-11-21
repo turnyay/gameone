@@ -1182,6 +1182,11 @@ export const IDL: Idl = {
           "name": "defenderRollResult",
           "type": "u16",
           "index": false
+        },
+        {
+          "name": "hitResourceCount",
+          "type": "u8",
+          "index": false
         }
       ]
     },

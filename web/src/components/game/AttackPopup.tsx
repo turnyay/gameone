@@ -238,7 +238,11 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
             <div style={{ marginBottom: '10px' }}>
               <HexTileSVG
                 color={attackerColorHex}
-                resources={showResult && newAttackerResources !== undefined ? newAttackerResources : attackerResources}
+                resources={
+                  showResult && newAttackerResources !== undefined && newAttackerResources !== null
+                    ? newAttackerResources 
+                    : attackerResources
+                }
               />
             </div>
             <div style={{ fontSize: '14px', color: '#888' }}>
@@ -261,10 +265,12 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
               </div>
             )}
             <div style={{ minHeight: '26px', marginTop: '4px' }}>
-              {showResult && attackerWon === false && newAttackerResources !== undefined && (
+              {showResult && attackerWon === false && (
                 (() => {
-                  const actualLoss = attackerResources - (newAttackerResources ?? attackerResources);
-                  return actualLoss > 0 ? (
+                  // ALWAYS use hitResourceCount from event - it's the authoritative source
+                  // ALL attacks have a resource decrement, so this should always be set
+                  const loss = hitResourceCount ?? 1; // Fallback to 1 if somehow not set
+                  return (
                 <div
                   style={{
                     color: '#ff0000',
@@ -273,9 +279,9 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
                     animation: 'fadeIn 0.5s'
                   }}
                 >
-                      -{actualLoss}
+                      -{loss}
                 </div>
-                  ) : null;
+                  );
                 })()
               )}
             </div>
@@ -288,7 +294,11 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
             <div style={{ marginBottom: '10px' }}>
               <HexTileSVG
                 color={defenderColorHex}
-                resources={showResult && newDefenderResources !== undefined ? newDefenderResources : defenderResources}
+                resources={
+                  showResult && newDefenderResources !== undefined && newDefenderResources !== null
+                    ? newDefenderResources 
+                    : defenderResources
+                }
               />
             </div>
             <div style={{ fontSize: '14px', color: '#888' }}>
@@ -313,10 +323,12 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
               </div>
             )}
             <div style={{ minHeight: '26px', marginTop: '4px' }}>
-              {showResult && attackerWon === true && newDefenderResources !== undefined && (
+              {showResult && attackerWon === true && (
                 (() => {
-                  const actualLoss = defenderResources - (newDefenderResources ?? defenderResources);
-                  return actualLoss > 0 ? (
+                  // ALWAYS use hitResourceCount from event - it's the authoritative source
+                  // ALL attacks have a resource decrement, so this should always be set
+                  const loss = hitResourceCount ?? 1; // Fallback to 1 if somehow not set
+                  return (
                 <div
                   style={{
                     color: '#ff0000',
@@ -325,9 +337,9 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
                     animation: 'fadeIn 0.5s'
                   }}
                 >
-                      -{actualLoss}
+                      -{loss}
                 </div>
-                  ) : null;
+                  );
                 })()
               )}
             </div>
@@ -371,7 +383,7 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
             >
               {attackerWon 
                 ? (tileTakenOver 
-                    ? `${attackerColorName} defeated ${defenderColorName} and moved ${hitResourceCount || 0} resources`
+                    ? `${attackerColorName} Team has defeated ${defenderColorName} Team`
                     : `${attackerColorName} Team Wins!`)
                 : `${defenderColorName} Team Wins!`}
             </div>

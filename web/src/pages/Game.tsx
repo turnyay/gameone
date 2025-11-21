@@ -66,6 +66,7 @@ const Game: React.FC = () => {
   const gameMessagesAddedRef = useRef<string | null>(null);
   const isUpdatingFromListenerRef = useRef(false);
   const pendingTransactionRef = useRef<string | null>(null);
+  const gameDataRef = useRef<GameAccount | null>(null); // Store game data in ref to avoid React re-renders
   
   // Standard function to add messages to live feed
   const addLiveFeedMessage = (message: string, type: 'move' | 'attack' | 'add' | 'info' = 'info') => {
@@ -82,7 +83,7 @@ const Game: React.FC = () => {
   useEffect(() => {
     if (!connectionMessagesAddedRef.current) {
       connectionMessagesAddedRef.current = true;
-      addLiveFeedMessage('Connecting to the Solana blockchain...', 'info');
+      addLiveFeedMessage('Connecting to the Solana blockchain', 'info');
       addLiveFeedMessage('Connected to the Solana blockchain', 'info');
     }
   }, []); // Empty dependency array - only run once on mount
@@ -175,24 +176,48 @@ const Game: React.FC = () => {
         setSimulatedTotalResources(simulatedTotal);
         setAvailableResources(playerAvailableResources);
         
-        // Update Phaser scene tiles incrementally (this is the main update)
+        // Store game data in ref (for Phaser access) without triggering React re-render
+        gameDataRef.current = newGameData;
+        
+        // Update Phaser scene tiles incrementally (this is the main update - no React re-render)
         if (gameRef.current) {
           const scene = gameRef.current.scene.getScene('MainScene') as any;
           if (scene && typeof scene.updateTiles === 'function') {
+            // Update tiles directly without triggering React state update
             scene.updateTiles(newGameData);
           }
         }
         
-        // Update game state silently (without triggering re-renders of components that depend on game)
-        // Use a functional update to avoid unnecessary re-renders
-        setGame(prevGame => {
-          // Only update if tile data actually changed to prevent unnecessary re-renders
-          if (!prevGame || JSON.stringify(prevGame.tileData) !== JSON.stringify(newGameData.tileData)) {
-            return newGameData;
+        // Only update React game state if there are significant non-tile changes
+        // This prevents unnecessary re-renders that cause flashing
+        // We check the current game state to see if non-tile data changed
+        const prevGame = gameDataRef.current;
+        if (prevGame) {
+          const statusChanged = prevGame.status !== newGameData.status;
+          const resourcesChanged = (prevGame as any).totalResourcesAvailable !== (newGameData as any).totalResourcesAvailable;
+          const xpChanged = (prevGame as any).xpPlayer1 !== (newGameData as any).xpPlayer1 ||
+                           (prevGame as any).xpPlayer2 !== (newGameData as any).xpPlayer2 ||
+                           (prevGame as any).xpPlayer3 !== (newGameData as any).xpPlayer3 ||
+                           (prevGame as any).xpPlayer4 !== (newGameData as any).xpPlayer4;
+          
+          // Only update React state if non-tile data changed
+          // Tile updates are handled by Phaser directly, so we don't need to update React state for those
+          if (statusChanged || resourcesChanged || xpChanged) {
+            // Update React state only for non-tile changes
+            setGame(prevGameState => {
+              if (!prevGameState) return newGameData;
+              // Only update if the change is significant (non-tile)
+              if (statusChanged || resourcesChanged || xpChanged) {
+                return { ...newGameData };
+              }
+              return prevGameState;
+            });
           }
-          // Update other fields that might have changed (resources, XP, etc.)
-          return { ...prevGame, ...newGameData };
-        });
+          // If only tile data changed, don't update React state at all (Phaser handles it)
+        } else {
+          // First time loading, update React state
+          setGame(newGameData);
+        }
         
         // Reset flag after a short delay to allow any pending operations to complete
         setTimeout(() => {
@@ -807,6 +832,8 @@ const Game: React.FC = () => {
       // The listener will handle its own updates to avoid double renders
       if (!isUpdatingFromListenerRef.current) {
         const oldGame = game;
+        // Store in ref first
+        gameDataRef.current = gameData;
         setGame(gameData);
         
         // Update Phaser scene tiles incrementally if game already exists
@@ -816,6 +843,9 @@ const Game: React.FC = () => {
             scene.updateTiles(gameData);
           }
         }
+      } else {
+        // Even if updating from listener, store in ref for Phaser
+        gameDataRef.current = gameData;
       }
       
       setError(null);
@@ -947,7 +977,8 @@ const Game: React.FC = () => {
   };
 
   const initGame = useCallback(() => {
-    if (gameRef.current || !game) return;
+    // Use ref to check if game exists, to avoid dependency on game state
+    if (gameRef.current || !gameDataRef.current) return;
     
     // Wait for the game container to be available
     const container = document.getElementById('game-container');
@@ -962,7 +993,9 @@ const Game: React.FC = () => {
 
     // Determine which player is the current user (the one with "YOU" label)
     // by finding which game player has the current wallet
-    const gamePlayers = (game as any).gamePlayers || [];
+    // Use ref to avoid dependency on React state
+    const gameData = gameDataRef.current || game;
+    const gamePlayers = (gameData as any).gamePlayers || [];
     const currentWallet = wallet.publicKey?.toString() || null;
     let currentUserColorIndex: number | null = null;
     
@@ -993,7 +1026,8 @@ const Game: React.FC = () => {
     const gameHeight = (GRID_CONFIG.OFFSET_HEIGHT + maxPixelY) * 2 + hexHeight;
 
     // Set game data in MainScene static variable before creating the game
-    MainScene.gameData = game;
+    // Use ref to avoid dependency on React state
+    MainScene.gameData = gameDataRef.current || game;
 
     const config = {
       type: Phaser.AUTO,
@@ -1018,7 +1052,7 @@ const Game: React.FC = () => {
     } as Phaser.Types.Core.GameConfig & { moveAllResources: boolean };
 
     gameRef.current = new Phaser.Game(config);
-  }, [playerColorIndex, game, wallet.publicKey]); // Depend on game data and wallet
+  }, [playerColorIndex, wallet.publicKey]); // Don't depend on game state - use ref instead
 
   // Update current user color index and set up move resources callback when game or wallet changes
   useEffect(() => {
@@ -1507,16 +1541,8 @@ const Game: React.FC = () => {
           attackStartedAt={attackData.attackStartedAt}
           isResolved={attackResolved}
           attackerWon={attackResult?.attackerWon}
-          newAttackerResources={
-            attackResult && game
-              ? game.tileData[attackData.attackerTileIndex]?.resourceCount
-              : undefined
-          }
-          newDefenderResources={
-            attackResult && game
-              ? game.tileData[attackData.defenderTileIndex]?.resourceCount
-              : undefined
-          }
+          newAttackerResources={attackResult?.newAttackerResources}
+          newDefenderResources={attackResult?.newDefenderResources}
           attackerRollResult={attackResult?.attackerRollResult}
           defenderRollResult={attackResult?.defenderRollResult}
           hitResourceCount={attackResult?.hitResourceCount}
@@ -1611,28 +1637,34 @@ const Game: React.FC = () => {
                           attackerWon = attackerRollResult > defenderRollResult;
                         }
                         
-                        // Parse hit_resource_count
+                        // Parse hit_resource_count - THIS IS THE AUTHORITATIVE SOURCE FROM THE EVENT
+                        // Try both camelCase and snake_case, and also check as number
                         hitResourceCount = data.hitResourceCount ?? data.hit_resource_count;
-                        console.log(`[ATTACK RESOLVED] Parsed hitResourceCount:`, hitResourceCount);
                         
-                        // Warn if hit_resource_count is missing (indicates old program version)
-                        if (hitResourceCount === undefined) {
-                          console.warn(`[ATTACK RESOLVED] WARNING: hit_resource_count field is missing from event. The on-chain program needs to be redeployed with the updated event structure.`);
-                          // Calculate hit count as fallback based on roll difference
-                          if (attackerRollResult !== undefined && defenderRollResult !== undefined) {
-                            const difference = Math.abs(attackerRollResult - defenderRollResult);
-                            const maxHitThreshold = 500; // Default from game account
-                            const maxHitResourceCount = 5; // Default from game account
-                            const calculatedHit = difference >= maxHitThreshold 
-                              ? maxHitResourceCount 
-                              : Math.floor((difference * maxHitResourceCount) / maxHitThreshold);
-                            const loserResources = attackerWon 
-                              ? (data.defenderResources ?? data.defender_resources ?? 0)
-                              : (data.attackerResources ?? data.attacker_resources ?? 0);
-                            hitResourceCount = calculatedHit >= loserResources ? loserResources : calculatedHit;
-                            console.log(`[ATTACK RESOLVED] Calculated fallback hitResourceCount:`, hitResourceCount);
+                        // Log all possible field names to debug
+                        console.log(`[ATTACK RESOLVED] Event data keys:`, Object.keys(data));
+                        console.log(`[ATTACK RESOLVED] hitResourceCount (camelCase):`, data.hitResourceCount, typeof data.hitResourceCount);
+                        console.log(`[ATTACK RESOLVED] hit_resource_count (snake_case):`, data.hit_resource_count, typeof data.hit_resource_count);
+                        console.log(`[ATTACK RESOLVED] Full event data:`, JSON.stringify(data, null, 2));
+                        console.log(`[ATTACK RESOLVED] Parsed hitResourceCount:`, hitResourceCount, typeof hitResourceCount);
+                        
+                        // Convert to number if it's a string or other type
+                        if (hitResourceCount !== undefined && hitResourceCount !== null) {
+                          hitResourceCount = Number(hitResourceCount);
+                          if (isNaN(hitResourceCount)) {
+                            console.error(`[ATTACK RESOLVED] ERROR: hitResourceCount is not a valid number:`, hitResourceCount);
+                            hitResourceCount = undefined;
                           }
                         }
+                        
+                        // ALL attacks have a resource decrement - ensure hitResourceCount is always set
+                        if (hitResourceCount === undefined || hitResourceCount === null || hitResourceCount === 0) {
+                          console.error(`[ATTACK RESOLVED] ERROR: hit_resource_count is missing or 0 from event! This should never happen. Using minimum of 1.`);
+                          // This should never happen, but ensure we always have a value
+                          hitResourceCount = 1;
+                        }
+                        
+                        console.log(`[ATTACK RESOLVED] Final hitResourceCount from event: ${hitResourceCount} (type: ${typeof hitResourceCount})`);
                         
                         // Determine winner from roll results
                         if (attackerRollResult !== undefined && defenderRollResult !== undefined) {
@@ -1722,70 +1754,92 @@ const Game: React.FC = () => {
                 // Fallback to game state comparison if log parsing fails
               }
 
-              // Don't call fetchGame() - the account listener will handle the update
-              // The listener will update tiles automatically
-              // For attack results, we'll use the current game state which will be updated by the listener
-              
-              // Wait a bit for the listener to update the game state
-              await new Promise(resolve => setTimeout(resolve, 500));
-              
-              // Use current game state (updated by listener) or fallback to parsing from account
-              let updatedGame: GameAccount | null = game;
-              if (!updatedGame || !updatedGame.tileData) {
-                // Fallback: fetch directly if game state not available
-                if (game) {
+              // ALWAYS fetch fresh game state directly from the gameboard to get accurate resource counts
+              let updatedGame: GameAccount | null = null;
+              if (game) {
+                try {
                   updatedGame = await client.fetchGame(game.publicKey.toString());
+                  console.log(`[RESOLVE ATTACK] Fetched fresh game state from gameboard`);
+                } catch (fetchError) {
+                  console.error(`[RESOLVE ATTACK] Failed to fetch game state:`, fetchError);
+                  updatedGame = game; // Fallback to current state
                 }
               }
               
               if (updatedGame) {
-                const newAttackerResources = updatedGame.tileData[attackData.attackerTileIndex]?.resourceCount || 0;
-                const newDefenderResources = updatedGame.tileData[attackData.defenderTileIndex]?.resourceCount || 0;
-                const newDefenderColor = updatedGame.tileData[attackData.defenderTileIndex]?.color || 0;
-                
-                // Calculate actual resource changes from on-chain state
-                const attackerResourceChange = attackData.attackerResources - newAttackerResources;
-                const defenderResourceChange = attackData.defenderResources - newDefenderResources;
-                
-                // Use actual resource changes instead of event hit count (event might be from old program version)
-                // The actual on-chain state is the source of truth
-                const actualAttackerLoss = attackerResourceChange > 0 ? attackerResourceChange : 0;
-                const actualDefenderLoss = defenderResourceChange > 0 ? defenderResourceChange : 0;
-                
-                // Update hitResourceCount to reflect actual on-chain changes
-                const actualHitCount = actualAttackerLoss > 0 ? actualAttackerLoss : actualDefenderLoss;
-                
-                console.log(`[RESOURCE CHANGES] Attacker: ${attackData.attackerResources} → ${newAttackerResources} (change: ${attackerResourceChange > 0 ? '-' : '+'}${Math.abs(attackerResourceChange)})`);
-                console.log(`[RESOURCE CHANGES] Defender: ${attackData.defenderResources} → ${newDefenderResources} (change: ${defenderResourceChange > 0 ? '-' : '+'}${Math.abs(defenderResourceChange)})`);
-                console.log(`[RESOURCE CHANGES] Expected hit from event: ${hitResourceCount ?? 'unknown'}, Actual attacker loss: ${actualAttackerLoss}, Actual defender loss: ${actualDefenderLoss}, Using actual hit: ${actualHitCount}`);
-                
-                // Override hitResourceCount with actual on-chain value
-                if (actualHitCount > 0) {
-                  hitResourceCount = actualHitCount;
+                // ALWAYS use hitResourceCount from the event - it's the authoritative source
+                // Ensure hitResourceCount is always set (should already be set from event parsing above)
+                if (hitResourceCount === undefined || hitResourceCount === null || hitResourceCount === 0) {
+                  console.error(`[RESOLVE ATTACK] ERROR: hitResourceCount not set from event! This should never happen. Using minimum of 1.`);
+                  hitResourceCount = 1;
                 }
                 
-                // If we couldn't parse logs, determine winner based on game state changes:
-                // 1. If defender tile color changed to attacker's color, attacker won
-                // 2. If defender resources decreased, attacker won
-                // 3. Otherwise, defender won (attacker resources decreased)
+                // Determine winner if not already determined
                 if (attackerWon === null) {
-                  if (newDefenderColor === (attackData.attackerColor + 1) && newDefenderColor !== (attackData.defenderColor + 1)) {
-                    // Defender tile was taken by attacker
-                    attackerWon = true;
-                  } else if (newDefenderResources < attackData.defenderResources) {
-                    // Defender lost resources
-                    attackerWon = true;
-                  } else if (newAttackerResources < attackData.attackerResources) {
-                    // Attacker lost resources
-                    attackerWon = false;
+                  if (attackerRollResult !== undefined && defenderRollResult !== undefined) {
+                    attackerWon = attackerRollResult > defenderRollResult;
                   } else {
-                    // Default fallback
-                    attackerWon = false;
+                    // Fallback: check on-chain state
+                    const onChainAttackerResources = updatedGame.tileData[attackData.attackerTileIndex]?.resourceCount || 0;
+                    const onChainDefenderResources = updatedGame.tileData[attackData.defenderTileIndex]?.resourceCount || 0;
+                    if (onChainDefenderResources < attackData.defenderResources) {
+                      attackerWon = true;
+                    } else if (onChainAttackerResources < attackData.attackerResources) {
+                      attackerWon = false;
+                    }
                   }
+                }
+                
+                // Calculate new resources based on hitResourceCount from event
+                // ALWAYS calculate both, so the popup can show updated counts for both tiles
+                let newAttackerResources: number;
+                let newDefenderResources: number;
+                
+                // Determine winner if not already determined (needed to know which side lost resources)
+                if (attackerWon === null) {
+                  if (attackerRollResult !== undefined && defenderRollResult !== undefined) {
+                    attackerWon = attackerRollResult > defenderRollResult;
+                  } else {
+                    // Fallback: check on-chain state
+                    const onChainAttackerResources = updatedGame.tileData[attackData.attackerTileIndex]?.resourceCount || 0;
+                    const onChainDefenderResources = updatedGame.tileData[attackData.defenderTileIndex]?.resourceCount || 0;
+                    if (onChainDefenderResources < attackData.defenderResources) {
+                      attackerWon = true;
+                    } else if (onChainAttackerResources < attackData.attackerResources) {
+                      attackerWon = false;
+                    } else {
+                      // Default: assume defender won if we can't determine
+                      attackerWon = false;
+                    }
+                  }
+                }
+                
+                // Get actual resource counts from the gameboard (on-chain state) - this is the source of truth
+                // These are the REAL resource counts after the attack, so use them directly
+                newAttackerResources = updatedGame.tileData[attackData.attackerTileIndex]?.resourceCount ?? attackData.attackerResources;
+                newDefenderResources = updatedGame.tileData[attackData.defenderTileIndex]?.resourceCount ?? attackData.defenderResources;
+                
+                console.log(`[RESOLVE ATTACK] Using actual gameboard resource counts - Attacker: ${attackData.attackerResources} → ${newAttackerResources}, Defender: ${attackData.defenderResources} → ${newDefenderResources}`);
+                
+                const newDefenderColor = updatedGame.tileData[attackData.defenderTileIndex]?.color || 0;
+                
+                console.log(`[RESOLVE ATTACK] Final resource counts - Attacker: ${attackData.attackerResources} → ${newAttackerResources}, Defender: ${attackData.defenderResources} → ${newDefenderResources}, hitResourceCount from event: ${hitResourceCount}`);
+                
+                // Ensure hitResourceCount is always set and valid
+                if (!hitResourceCount || hitResourceCount === 0) {
+                  console.error(`[RESOLVE ATTACK] CRITICAL: hitResourceCount is ${hitResourceCount}! This should never happen. All attacks must have a resource decrement.`);
+                  hitResourceCount = 1; // Fallback, but this should never happen
                 }
 
                 // Check if tile was fully taken over (tile color changed to attacker's color)
-                const tileTakenOver = attackerWon && newDefenderColor === (attackData.attackerColor + 1) && newDefenderColor !== (attackData.defenderColor + 1);
+                // Tile is taken over when: attacker won AND defender tile color changed to attacker's color
+                // newDefenderColor is in 1-4 format (on-chain), attackerColor is 0-3 (UI format)
+                const attackerColorOnChain = attackData.attackerColor + 1; // Convert 0-3 to 1-4
+                const defenderColorOnChain = attackData.defenderColor + 1; // Convert 0-3 to 1-4
+                const tileTakenOver = attackerWon === true && newDefenderColor === attackerColorOnChain && newDefenderColor !== defenderColorOnChain;
+                
+                console.log(`[RESOLVE ATTACK] tileTakenOver check: attackerWon=${attackerWon}, newDefenderColor=${newDefenderColor}, attackerColorOnChain=${attackerColorOnChain}, defenderColorOnChain=${defenderColorOnChain}, tileTakenOver=${tileTakenOver}`);
+                console.log(`[RESOLVE ATTACK] Resource counts from gameboard - Attacker tile ${attackData.attackerTileIndex}: ${newAttackerResources}, Defender tile ${attackData.defenderTileIndex}: ${newDefenderResources}`);
 
                 setAttackResolved(true);
                 setAttackResult({
@@ -1822,7 +1876,7 @@ const Game: React.FC = () => {
               throw err;
             }
           }}
-          onAttackAgain={attackResult?.attackerWon ? undefined : async () => {
+          onAttackAgain={attackResult?.tileTakenOver === true ? undefined : async () => {
             if (!client || !wallet.publicKey || !game || !attackData) {
               throw new Error('Wallet not connected or game not loaded');
             }
