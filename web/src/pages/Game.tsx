@@ -177,7 +177,14 @@ const Game: React.FC = () => {
         setAvailableResources(playerAvailableResources);
         
         // Store game data in ref (for Phaser access) without triggering React re-render
-        gameDataRef.current = newGameData;
+        // Preserve gamePlayers from current game state if it exists
+        if (game && (game as any).gamePlayers) {
+          const mergedRef: any = { ...newGameData };
+          mergedRef.gamePlayers = (game as any).gamePlayers;
+          gameDataRef.current = mergedRef;
+        } else {
+          gameDataRef.current = newGameData;
+        }
         
         // Update Phaser scene tiles incrementally (this is the main update - no React re-render)
         if (gameRef.current) {
@@ -188,36 +195,17 @@ const Game: React.FC = () => {
           }
         }
         
-        // Only update React game state if there are significant non-tile changes
-        // This prevents unnecessary re-renders that cause flashing
-        // We check the current game state to see if non-tile data changed
-        const prevGame = gameDataRef.current;
-        if (prevGame) {
-          const statusChanged = prevGame.status !== newGameData.status;
-          const resourcesChanged = (prevGame as any).totalResourcesAvailable !== (newGameData as any).totalResourcesAvailable;
-          const xpChanged = (prevGame as any).xpPlayer1 !== (newGameData as any).xpPlayer1 ||
-                           (prevGame as any).xpPlayer2 !== (newGameData as any).xpPlayer2 ||
-                           (prevGame as any).xpPlayer3 !== (newGameData as any).xpPlayer3 ||
-                           (prevGame as any).xpPlayer4 !== (newGameData as any).xpPlayer4;
-          
-          // Only update React state if non-tile data changed
-          // Tile updates are handled by Phaser directly, so we don't need to update React state for those
-          if (statusChanged || resourcesChanged || xpChanged) {
-            // Update React state only for non-tile changes
+            // Always update React game state to ensure UI reflects latest data (XP, tier counts, etc.)
+            // Update React state whenever account changes, preserving gamePlayers
             setGame(prevGameState => {
               if (!prevGameState) return newGameData;
-              // Only update if the change is significant (non-tile)
-              if (statusChanged || resourcesChanged || xpChanged) {
-                return { ...newGameData };
+              const merged: any = { ...newGameData };
+              // Always preserve gamePlayers from previous state
+              if ((prevGameState as any).gamePlayers) {
+                merged.gamePlayers = (prevGameState as any).gamePlayers;
               }
-              return prevGameState;
+              return merged;
             });
-          }
-          // If only tile data changed, don't update React state at all (Phaser handles it)
-        } else {
-          // First time loading, update React state
-          setGame(newGameData);
-        }
         
         // Reset flag after a short delay to allow any pending operations to complete
         setTimeout(() => {
@@ -528,7 +516,7 @@ const Game: React.FC = () => {
 
   // Parse game account data from buffer
   const parseGameAccountData = (gamePda: PublicKey, accountData: Buffer): GameAccount => {
-    // Skip 8 bytes for Anchor discriminator
+      // Skip 8 bytes for Anchor discriminator
     const data: Buffer = Buffer.from(accountData.slice(8));
       console.log('Data after discriminator length:', data.length);
       
@@ -834,7 +822,7 @@ const Game: React.FC = () => {
         const oldGame = game;
         // Store in ref first
         gameDataRef.current = gameData;
-        setGame(gameData);
+      setGame(gameData);
         
         // Update Phaser scene tiles incrementally if game already exists
         if (oldGame && gameRef.current && !skipLoading) {
@@ -854,7 +842,7 @@ const Game: React.FC = () => {
       console.error('Error fetching game:', err);
     } finally {
       if (!skipLoading) {
-        setLoading(false);
+      setLoading(false);
       }
     }
   };
@@ -1341,14 +1329,47 @@ const Game: React.FC = () => {
             console.error('Error fetching defender account:', error);
           }
 
-          // Set up attack popup data
+          // Fetch fresh game state to get current tile data (colors and resources)
+          let currentGame = game;
+          try {
+            const freshGame = await client.fetchGame(game.publicKey.toString());
+            if (freshGame) {
+              currentGame = freshGame;
+              // Update game state with fresh data, preserving gamePlayers
+              setGame(prevGame => {
+                if (!prevGame) return freshGame;
+                const merged: any = { ...freshGame };
+                if ((prevGame as any).gamePlayers) {
+                  merged.gamePlayers = (prevGame as any).gamePlayers;
+                }
+                return merged;
+              });
+            }
+          } catch (error) {
+            console.error('Error fetching fresh game state:', error);
+          }
+
+          // Get current tile data from gameboard (use fresh game if available, otherwise fallback to current game)
+          const currentAttackerTile = currentGame?.tileData[attackerTileIndex];
+          const currentDefenderTile = currentGame?.tileData[defenderTileIndex];
+          
+          // Get current colors from gameboard (convert from 1-4 to 0-3)
+          // Use gameboard colors as source of truth, fallback to original if not available
+          const currentAttackerColor = currentAttackerTile?.color ? (currentAttackerTile.color - 1) : (attackerTile?.color ? (attackerTile.color - 1) : attackerColor);
+          const currentDefenderColor = currentDefenderTile?.color ? (currentDefenderTile.color - 1) : (defenderTile?.color ? (defenderTile.color - 1) : defenderColor);
+          
+          // Get current resource counts from gameboard (always use fresh data)
+          const currentAttackerResources = currentAttackerTile?.resourceCount ?? attackerTile?.resourceCount ?? 0;
+          const currentDefenderResources = currentDefenderTile?.resourceCount ?? defenderTile?.resourceCount ?? 0;
+
+          // Set up attack popup data with current gameboard state
           setAttackData({
             attackerTileIndex,
             defenderTileIndex,
-            attackerColor,
-            defenderColor,
-            attackerResources: attackerTile.resourceCount,
-            defenderResources: defenderTile.resourceCount,
+            attackerColor: currentAttackerColor,
+            defenderColor: currentDefenderColor,
+            attackerResources: currentAttackerResources,
+            defenderResources: currentDefenderResources,
             attackerTileX: attackerX,
             attackerTileY: attackerY,
             defenderTileX: defenderX,
@@ -1518,7 +1539,7 @@ const Game: React.FC = () => {
       </div>
 
       {/* Attack Popup */}
-      {attackPopupOpen && attackData && (
+      {attackPopupOpen && attackData && game && (
         <AttackPopup
           isOpen={attackPopupOpen}
           onClose={() => {
@@ -1530,10 +1551,10 @@ const Game: React.FC = () => {
           }}
           attackerTileIndex={attackData.attackerTileIndex}
           defenderTileIndex={attackData.defenderTileIndex}
-          attackerColor={attackData.attackerColor}
-          defenderColor={attackData.defenderColor}
-          attackerResources={attackData.attackerResources}
-          defenderResources={attackData.defenderResources}
+          attackerColor={game.tileData[attackData.attackerTileIndex]?.color ? (game.tileData[attackData.attackerTileIndex].color - 1) : attackData.attackerColor}
+          defenderColor={game.tileData[attackData.defenderTileIndex]?.color ? (game.tileData[attackData.defenderTileIndex].color - 1) : attackData.defenderColor}
+          attackerResources={attackResolved && attackResult?.newAttackerResources !== undefined ? attackResult.newAttackerResources : (game.tileData[attackData.attackerTileIndex]?.resourceCount ?? attackData.attackerResources)}
+          defenderResources={attackResolved && attackResult?.newDefenderResources !== undefined ? attackResult.newDefenderResources : (game.tileData[attackData.defenderTileIndex]?.resourceCount ?? attackData.defenderResources)}
           attackerTileX={attackData.attackerTileX}
           attackerTileY={attackData.attackerTileY}
           defenderTileX={attackData.defenderTileX}
@@ -1804,13 +1825,13 @@ const Game: React.FC = () => {
                     const onChainAttackerResources = updatedGame.tileData[attackData.attackerTileIndex]?.resourceCount || 0;
                     const onChainDefenderResources = updatedGame.tileData[attackData.defenderTileIndex]?.resourceCount || 0;
                     if (onChainDefenderResources < attackData.defenderResources) {
-                      attackerWon = true;
+                    attackerWon = true;
                     } else if (onChainAttackerResources < attackData.attackerResources) {
-                      attackerWon = false;
-                    } else {
+                    attackerWon = false;
+                  } else {
                       // Default: assume defender won if we can't determine
-                      attackerWon = false;
-                    }
+                    attackerWon = false;
+                  }
                   }
                 }
                 
@@ -1836,9 +1857,11 @@ const Game: React.FC = () => {
                 // newDefenderColor is in 1-4 format (on-chain), attackerColor is 0-3 (UI format)
                 const attackerColorOnChain = attackData.attackerColor + 1; // Convert 0-3 to 1-4
                 const defenderColorOnChain = attackData.defenderColor + 1; // Convert 0-3 to 1-4
-                const tileTakenOver = attackerWon === true && newDefenderColor === attackerColorOnChain && newDefenderColor !== defenderColorOnChain;
+                // Tile is taken over if: attacker won AND the defender tile now has the attacker's color
+                const tileTakenOver = attackerWon === true && newDefenderColor === attackerColorOnChain;
                 
                 console.log(`[RESOLVE ATTACK] tileTakenOver check: attackerWon=${attackerWon}, newDefenderColor=${newDefenderColor}, attackerColorOnChain=${attackerColorOnChain}, defenderColorOnChain=${defenderColorOnChain}, tileTakenOver=${tileTakenOver}`);
+                console.log(`[RESOLVE ATTACK] Victory message will be: ${tileTakenOver ? `"${['Red', 'Yellow', 'Green', 'Blue'][attackData.attackerColor]} Team has defeated ${['Red', 'Yellow', 'Green', 'Blue'][attackData.defenderColor]} Team"` : `"${['Red', 'Yellow', 'Green', 'Blue'][attackData.attackerColor]} Team Wins!"`}`);
                 console.log(`[RESOLVE ATTACK] Resource counts from gameboard - Attacker tile ${attackData.attackerTileIndex}: ${newAttackerResources}, Defender tile ${attackData.defenderTileIndex}: ${newDefenderResources}`);
 
                 setAttackResolved(true);
@@ -1892,9 +1915,6 @@ const Game: React.FC = () => {
               // Wait for transaction confirmation
               await connection.confirmTransaction(tx);
 
-              // Don't call fetchGame() - the account listener will handle the update
-              // The listener will update tiles automatically
-
               // Fetch defender account to get new attack start time
               let newAttackStartedAt = Math.floor(Date.now() / 1000);
               try {
@@ -1906,15 +1926,15 @@ const Game: React.FC = () => {
                 console.error('Error fetching defender account:', error);
               }
 
-              // Wait a bit for the listener to update the game state
-              await new Promise(resolve => setTimeout(resolve, 500));
-              
-              // Use current game state (updated by listener) or fallback to parsing from account
-              let updatedGame: GameAccount | null = game;
-              if (!updatedGame || !updatedGame.tileData) {
-                // Fallback: fetch directly if game state not available
-                if (game) {
+              // ALWAYS fetch fresh game state directly from the gameboard to get accurate resource counts and colors
+              let updatedGame: GameAccount | null = null;
+              if (game) {
+                try {
                   updatedGame = await client.fetchGame(game.publicKey.toString());
+                  console.log(`[ATTACK AGAIN] Fetched fresh game state from gameboard`);
+                } catch (fetchError) {
+                  console.error(`[ATTACK AGAIN] Failed to fetch game state:`, fetchError);
+                  updatedGame = game; // Fallback to current state
                 }
               }
               
@@ -1922,17 +1942,60 @@ const Game: React.FC = () => {
                 const updatedAttackerTile = updatedGame.tileData[attackData.attackerTileIndex];
                 const updatedDefenderTile = updatedGame.tileData[attackData.defenderTileIndex];
 
-                // Update attack data with new attack
+                // Get current colors from gameboard (convert from 1-4 to 0-3 format)
+                const attackerColor = updatedAttackerTile?.color ? (updatedAttackerTile.color - 1) : attackData.attackerColor;
+                const defenderColor = updatedDefenderTile?.color ? (updatedDefenderTile.color - 1) : attackData.defenderColor;
+
+                // Update attack data with fresh gameboard state
                 setAttackData({
                   ...attackData,
+                  attackerColor,
+                  defenderColor,
                   attackerResources: updatedAttackerTile?.resourceCount || 0,
                   defenderResources: updatedDefenderTile?.resourceCount || 0,
                   attackStartedAt: newAttackStartedAt
                 });
 
+                // Update game state while preserving critical fields like gamePlayers
+                // client.fetchGame() doesn't include gamePlayers, so we must preserve it
+                setGame(prevGame => {
+                  if (!prevGame) return updatedGame;
+                  // Always preserve gamePlayers from previous state
+                  const mergedGame: any = { ...updatedGame };
+                  if ((prevGame as any).gamePlayers) {
+                    mergedGame.gamePlayers = (prevGame as any).gamePlayers;
+                  }
+                  // Preserve other critical fields
+                  if ((prevGame as any).totalResourcesAvailable !== undefined) {
+                    mergedGame.totalResourcesAvailable = (prevGame as any).totalResourcesAvailable;
+                  }
+                  if ((prevGame as any).resourcesSpentPlayer1 !== undefined) {
+                    mergedGame.resourcesSpentPlayer1 = (prevGame as any).resourcesSpentPlayer1;
+                    mergedGame.resourcesSpentPlayer2 = (prevGame as any).resourcesSpentPlayer2;
+                    mergedGame.resourcesSpentPlayer3 = (prevGame as any).resourcesSpentPlayer3;
+                    mergedGame.resourcesSpentPlayer4 = (prevGame as any).resourcesSpentPlayer4;
+                  }
+                  if ((prevGame as any).availableResourcesTimestamp !== undefined) {
+                    mergedGame.availableResourcesTimestamp = (prevGame as any).availableResourcesTimestamp;
+                  }
+                  return mergedGame;
+                });
+                // Update ref with merged data
+                if (game) {
+                  const mergedRef: any = { ...updatedGame };
+                  if ((game as any).gamePlayers) {
+                    mergedRef.gamePlayers = (game as any).gamePlayers;
+                  }
+                  gameDataRef.current = mergedRef;
+                } else {
+                  gameDataRef.current = updatedGame;
+                }
+
                 // Clear resolved status and result
                 setAttackResolved(false);
                 setAttackResult(null);
+                
+                console.log(`[ATTACK AGAIN] Updated attack data - Attacker: ${updatedAttackerTile?.resourceCount || 0} resources (color: ${attackerColor}), Defender: ${updatedDefenderTile?.resourceCount || 0} resources (color: ${defenderColor})`);
               }
             } catch (err) {
               console.error('Error attacking again:', err);

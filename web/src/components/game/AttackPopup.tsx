@@ -102,11 +102,26 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
   newDefenderColor,
   tileTakenOver = false
 }) => {
-  const [timeRemaining, setTimeRemaining] = useState(3);
+  const [timeRemaining, setTimeRemaining] = useState(4);
   const [canResolve, setCanResolve] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
   const [showResult, setShowResult] = useState(isResolved);
   const [isAttackingAgain, setIsAttackingAgain] = useState(false);
+
+  // Debug logging for victory message
+  useEffect(() => {
+    if (showResult && attackerWon) {
+      console.log('[ATTACK POPUP] Victory message debug:', {
+        attackerWon,
+        tileTakenOver,
+        attackerColorName: getColorName(attackerColor),
+        defenderColorName: getColorName(defenderColor),
+        message: tileTakenOver 
+          ? `${getColorName(attackerColor)} Team has defeated ${getColorName(defenderColor)} Team`
+          : `${getColorName(attackerColor)} Team Wins!`
+      });
+    }
+  }, [showResult, attackerWon, tileTakenOver, attackerColor, defenderColor]);
 
   useEffect(() => {
     if (!isOpen || isResolved) {
@@ -116,7 +131,7 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
     const updateTimer = () => {
       const now = Math.floor(Date.now() / 1000);
       const elapsed = now - attackStartedAt;
-      const remaining = Math.max(0, 3 - elapsed);
+      const remaining = Math.max(0, 4 - elapsed);
       setTimeRemaining(Math.ceil(remaining));
       setCanResolve(remaining <= 0);
     };
@@ -134,7 +149,7 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
     } else {
       // Reset when attack is started again
       setShowResult(false);
-      setTimeRemaining(3);
+      setTimeRemaining(4);
       setCanResolve(false);
     }
   }, [isResolved]);
@@ -362,7 +377,7 @@ export const AttackPopup: React.FC<AttackPopupProps> = ({
             >
               <div
                 style={{
-                  width: `${((3 - timeRemaining) / 3) * 100}%`,
+                  width: `${((4 - timeRemaining) / 4) * 100}%`,
                   height: '100%',
                   backgroundColor: '#ffa500',
                   transition: 'width 0.1s linear'
