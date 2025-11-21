@@ -1130,11 +1130,7 @@ const Games: React.FC = () => {
         ) : (
           <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
             {games.length > 0 ? (
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
-                gap: '24px'
-              }}>
+              <div id="games-grid" className="games-grid">
                 {games.map((game) => (
                   <div
                     key={game.publicKey.toString()}
@@ -1247,6 +1243,19 @@ const Games: React.FC = () => {
         .games-scroll-container {
           scrollbar-width: thin;
           scrollbar-color: #444 #1a1a1a;
+        }
+        
+        .games-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 24px;
+        }
+        
+        @media (max-width: 768px) {
+          .games-grid {
+            grid-template-columns: 1fr !important;
+            gap: 16px !important;
+          }
         }
       `}</style>
 

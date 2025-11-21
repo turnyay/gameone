@@ -1458,7 +1458,7 @@ const Game: React.FC = () => {
   }
 
   return (
-    <div>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <div style={{ height: '64px', backgroundColor: '#0a0a0a', borderBottom: '1px solid #000000' }}>
         <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px' }}>
           <div style={{ flex: 1 }}></div>
@@ -1551,7 +1551,7 @@ const Game: React.FC = () => {
         </div>
       </div>
 
-      <div style={{ 
+      <div id="game-layout-container" style={{ 
         display: 'flex', 
         width: '100%', 
         height: 'calc(100vh - 64px)',
@@ -1575,6 +1575,33 @@ const Game: React.FC = () => {
               margin: 0 auto;
               max-width: 100%;
               max-height: 100%;
+            }
+            
+            @media (max-width: 768px) {
+              #game-layout-container {
+                flex-direction: column !important;
+                height: auto !important;
+                min-height: calc(100vh - 64px) !important;
+                overflow: visible !important;
+              }
+              
+              #game-container {
+                width: 100% !important;
+                height: 50vh !important;
+                min-height: 300px !important;
+                border-right: none !important;
+                border-bottom: 1px solid #333 !important;
+                flex-shrink: 0 !important;
+              }
+              
+              /* Make UI component sections full width on mobile */
+              #game-layout-container > div:not(#game-container) {
+                width: 100% !important;
+                height: auto !important;
+                border-right: none !important;
+                border-bottom: 1px solid #333 !important;
+                flex-shrink: 0 !important;
+              }
             }
           `}</style>
         </div>
