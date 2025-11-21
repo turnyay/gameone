@@ -1398,7 +1398,8 @@ const Game: React.FC = () => {
 
   useEffect(() => {
     // Initialize game immediately when component mounts and game data is loaded
-    if (!loading && game) {
+    // Only initialize once when loading completes and game is first available
+    if (!loading && game && !gameRef.current) {
       initGame();
     }
 
@@ -1408,7 +1409,7 @@ const Game: React.FC = () => {
         gameRef.current = null;
       }
     };
-  }, [loading, game]); // Initialize when game data is loaded
+  }, [loading, initGame]); // Only depend on loading and initGame, not game state
 
   if (loading) {
     return (
