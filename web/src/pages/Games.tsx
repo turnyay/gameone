@@ -6,6 +6,8 @@ import { PublicKey, SystemProgram, Transaction, Keypair } from '@solana/web3.js'
 import { BN } from '@coral-xyz/anchor';
 import { HexoneClient, GameAccount, PROGRAM_ID } from '../lib/hexone';
 import { Buffer } from 'buffer';
+import { useNetwork } from '../contexts/NetworkContext';
+import { RpcSettingsPopup } from '../components/RpcSettingsPopup';
 
 export function longToByteArray(long: number): number[] {
     const byteArray = [0, 0, 0, 0, 0, 0, 0, 0];
@@ -43,6 +45,8 @@ const Games: React.FC = () => {
   const navigate = useNavigate();
   const { connection } = useConnection();
   const wallet = useWallet();
+  const { network, setNetwork } = useNetwork();
+  const [rpcSettingsOpen, setRpcSettingsOpen] = useState(false);
   const [platformPda, setPlatformPda] = useState<PublicKey | null>(null);
   const [gameCount, setGameCount] = useState<number | null>(null);
   const [games, setGames] = useState<GameAccount[]>([]);
@@ -60,16 +64,16 @@ const Games: React.FC = () => {
 
   // Set up HexoneClient - same pattern as SiclubClient
   const client = useMemo(() => {
-    if (!wallet.publicKey || !wallet.signTransaction) {
+    if (!wallet.publicKey || !wallet.signTransaction || !connection) {
       return null;
     }
     try {
-      return new HexoneClient(wallet);
+      return new HexoneClient(wallet, connection);
     } catch (err) {
       console.error('Error creating HexoneClient:', err);
       return null;
     }
-  }, [wallet]);
+  }, [wallet, connection]);
 
   useEffect(() => {
     fetchPlatformInfo();
@@ -330,7 +334,7 @@ const Games: React.FC = () => {
     try {
       setLoading(true);
       // Use read-only client for fetching platform info
-      const readOnlyClient = HexoneClient.createReadOnly();
+      const readOnlyClient = HexoneClient.createReadOnly(connection);
       // Get platform account
       const [pda] = await PublicKey.findProgramAddress(
         [Buffer.from('platform')],
@@ -364,7 +368,7 @@ const Games: React.FC = () => {
         gameCountBuffer.writeBigUInt64LE(BigInt(i), 0);
 
         // Use read-only client for fetching games
-        const readOnlyClient = HexoneClient.createReadOnly();
+        const readOnlyClient = HexoneClient.createReadOnly(connection);
         // Find the PDA using the correct seed format
         const [gamePda] = await PublicKey.findProgramAddress(
           [Buffer.from('GAME-'), gameCountBuffer],
@@ -799,6 +803,65 @@ const Games: React.FC = () => {
                 {balance.toFixed(4)} SOL
               </span>
             )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {/* Question Mark Icon */}
+              <button
+                onClick={() => setRpcSettingsOpen(true)}
+                style={{
+                  width: '24px',
+                  height: '24px',
+                  borderRadius: '50%',
+                  border: '1px solid #555',
+                  backgroundColor: '#1a1a1a',
+                  color: '#ffffff',
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s',
+                  padding: 0,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#333';
+                  e.currentTarget.style.borderColor = '#777';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#1a1a1a';
+                  e.currentTarget.style.borderColor = '#555';
+                }}
+                title="RPC Settings"
+              >
+                ?
+              </button>
+              
+              {/* Network Dropdown */}
+              <select
+                value={network}
+                onChange={(e) => setNetwork(e.target.value as 'localnet' | 'devnet' | 'mainnet')}
+                style={{
+                  padding: '6px 12px',
+                  backgroundColor: '#1a1a1a',
+                  border: '1px solid #555',
+                  borderRadius: '4px',
+                  color: '#ffffff',
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = '#777';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = '#555';
+                }}
+              >
+                <option value="localnet">Localnet</option>
+                <option value="devnet">Devnet</option>
+                <option value="mainnet">Mainnet</option>
+              </select>
+            </div>
             <WalletMultiButton />
           </div>
         </div>
@@ -1186,6 +1249,12 @@ const Games: React.FC = () => {
           scrollbar-color: #444 #1a1a1a;
         }
       `}</style>
+
+      {/* RPC Settings Popup */}
+      <RpcSettingsPopup
+        isOpen={rpcSettingsOpen}
+        onClose={() => setRpcSettingsOpen(false)}
+      />
     </div>
   );
 };

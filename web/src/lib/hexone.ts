@@ -1339,10 +1339,11 @@ export class HexoneClient {
   private walletContext: WalletContextState;
 
   constructor(
-    walletContext: WalletContextState
+    walletContext: WalletContextState,
+    connection: Connection
   ) {
-    // Create connection to local test validator
-    this.connection = new Connection('http://localhost:8899', 'confirmed');
+    // Use the provided connection (from network context)
+    this.connection = connection;
     
     if (!walletContext.publicKey || !walletContext.signTransaction) {
       throw new Error('Wallet not connected or missing required methods');
@@ -1415,8 +1416,7 @@ export class HexoneClient {
   }
 
   // Static method to create a read-only client
-  static createReadOnly(): HexoneClient {
-    const connection = new Connection('http://localhost:8899', 'confirmed');
+  static createReadOnly(connection: Connection): HexoneClient {
     const dummyWallet = {
       publicKey: new PublicKey('11111111111111111111111111111111'),
       signTransaction: async (tx: Transaction): Promise<Transaction> => tx,

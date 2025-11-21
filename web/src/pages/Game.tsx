@@ -12,6 +12,8 @@ import { MainScene } from '../components/game/MainScene';
 import { HexTile } from '../components/game/HexTile';
 import { UI } from '../components/game/UI';
 import { AttackPopup } from '../components/game/AttackPopup';
+import { RpcSettingsPopup } from '../components/RpcSettingsPopup';
+import { useNetwork } from '../contexts/NetworkContext';
 import { INITIAL_RESOURCES, RESOURCE_REFRESH_RATE, RESOURCES_PER_REFRESH, GRID_CONFIG } from '../components/game/constants';
 
 const Game: React.FC = () => {
@@ -67,6 +69,8 @@ const Game: React.FC = () => {
   const isUpdatingFromListenerRef = useRef(false);
   const pendingTransactionRef = useRef<string | null>(null);
   const gameDataRef = useRef<GameAccount | null>(null); // Store game data in ref to avoid React re-renders
+  const { network, setNetwork } = useNetwork();
+  const [rpcSettingsOpen, setRpcSettingsOpen] = useState(false);
   
   // Standard function to add messages to live feed
   const addLiveFeedMessage = (message: string, type: 'move' | 'attack' | 'add' | 'info' = 'info') => {
@@ -102,16 +106,16 @@ const Game: React.FC = () => {
   
   // Set up HexoneClient - same pattern as SiclubClient
   const client = useMemo(() => {
-    if (!wallet.publicKey || !wallet.signTransaction) {
+    if (!wallet.publicKey || !wallet.signTransaction || !connection) {
       return null;
     }
     try {
-      return new HexoneClient(wallet);
+      return new HexoneClient(wallet, connection);
     } catch (err) {
       console.error('Error creating HexoneClient:', err);
       return null;
     }
-  }, [wallet]);
+  }, [wallet, connection]);
 
   useEffect(() => {
     if (!gameId) return;
@@ -1483,6 +1487,65 @@ const Game: React.FC = () => {
                 {balance.toFixed(4)} SOL
               </span>
             )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {/* Question Mark Icon */}
+              <button
+                onClick={() => setRpcSettingsOpen(true)}
+                style={{
+                  width: '24px',
+                  height: '24px',
+                  borderRadius: '50%',
+                  border: '1px solid #555',
+                  backgroundColor: '#1a1a1a',
+                  color: '#ffffff',
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s',
+                  padding: 0,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#333';
+                  e.currentTarget.style.borderColor = '#777';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#1a1a1a';
+                  e.currentTarget.style.borderColor = '#555';
+                }}
+                title="RPC Settings"
+              >
+                ?
+              </button>
+              
+              {/* Network Dropdown */}
+              <select
+                value={network}
+                onChange={(e) => setNetwork(e.target.value as 'localnet' | 'devnet' | 'mainnet')}
+                style={{
+                  padding: '6px 12px',
+                  backgroundColor: '#1a1a1a',
+                  border: '1px solid #555',
+                  borderRadius: '4px',
+                  color: '#ffffff',
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = '#777';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = '#555';
+                }}
+              >
+                <option value="localnet">Localnet</option>
+                <option value="devnet">Devnet</option>
+                <option value="mainnet">Mainnet</option>
+              </select>
+            </div>
             <WalletMultiButton />
           </div>
         </div>
@@ -2005,6 +2068,12 @@ const Game: React.FC = () => {
           }}
         />
       )}
+
+      {/* RPC Settings Popup */}
+      <RpcSettingsPopup
+        isOpen={rpcSettingsOpen}
+        onClose={() => setRpcSettingsOpen(false)}
+      />
     </div>
   );
 };

@@ -1,8 +1,10 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { Hexone } from "../target/types/hexone";
-import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
+import { PublicKey, Keypair, SystemProgram, Transaction } from "@solana/web3.js";
 import { expect } from "chai";
+import * as fs from "fs";
+import * as path from "path";
 
 // Program ID from Anchor.toml
 const PROGRAM_ID = new PublicKey("4hCMsw4pRN8VsyPg6USUEyEmnX5VTApEAWyEmMdrrtGj");
@@ -11,6 +13,15 @@ const PROGRAM_ID = new PublicKey("4hCMsw4pRN8VsyPg6USUEyEmnX5VTApEAWyEmMdrrtGj")
 const RESOURCES_PER_MINUTE = 10;
 
 describe("hexone", () => {
+  // Flag to run devnet-only tests (skip airdrops and game creation)
+  const devnetOnly = true;
+
+  // Target wallets (used for airdrops and transfers)
+  const targetWallet1 = new PublicKey("9C6MuwjX9wHYp8Rtvn4fksHNtvqD3TnpRcehZbXWn1pG");
+  const targetWallet2 = new PublicKey("BHC5zYpPGcfCpo6oUHZsozjA1vE9bRiZCNLprrPasLg7");
+  const targetWallet3 = new PublicKey("7MyLbGM3NuJo2EEaqMfS4QAyRhBvKG4tTRQWrtdiDHLM");
+  const targetWallet4 = new PublicKey("4a3iJz8nv3ZyPaTzJsugvMSzNvsYC6uQ4NXX5cY33ygb");
+
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
 
@@ -62,7 +73,16 @@ describe("hexone", () => {
   };
 
   // Test accounts
-  const admin = Keypair.generate();
+  // Use saved keypair for admin if devnetOnly, otherwise generate new one
+  let admin: Keypair;
+  if (devnetOnly) {
+    const keypairPath = path.join(process.env.HOME || "/home/mike", ".config", "solana", "id.json");
+    const keypairData = JSON.parse(fs.readFileSync(keypairPath, "utf-8"));
+    admin = Keypair.fromSecretKey(Uint8Array.from(keypairData));
+    console.log(`✓ Using admin keypair from ${keypairPath}: ${admin.publicKey.toBase58()}`);
+  } else {
+    admin = Keypair.generate();
+  }
   const player1 = Keypair.generate();
   const player2 = Keypair.generate();
   const player3 = Keypair.generate();
@@ -76,39 +96,94 @@ describe("hexone", () => {
   let player3PDA: PublicKey;
   let player4PDA: PublicKey;
 
+  // Wait 1 minute before starting tests to avoid rate limiting (runs first, blocks all tests)
+  before(async function() {
+    console.log("\n⏳ Waiting 60 seconds before starting tests to avoid RPC rate limiting...");
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    console.log("✓ Wait complete, starting tests...\n");
+  });
+
   before(async () => {
     try {
-      // Airdrop SOL to admin and players (increased amount to 10 SOL)
-      const airdropAmount = 10 * anchor.web3.LAMPORTS_PER_SOL;
-      const targetWallet = new PublicKey("9C6MuwjX9wHYp8Rtvn4fksHNtvqD3TnpRcehZbXWn1pG");
-      const targetWallet2 = new PublicKey("BHC5zYpPGcfCpo6oUHZsozjA1vE9bRiZCNLprrPasLg7");
-      const targetWallet3 = new PublicKey("7MyLbGM3NuJo2EEaqMfS4QAyRhBvKG4tTRQWrtdiDHLM");
-      const targetWallet4 = new PublicKey("4a3iJz8nv3ZyPaTzJsugvMSzNvsYC6uQ4NXX5cY33ygb");
-      const airdropPromises = [
-        provider.connection.requestAirdrop(admin.publicKey, airdropAmount),
-        provider.connection.requestAirdrop(player1.publicKey, airdropAmount),
-        provider.connection.requestAirdrop(player2.publicKey, airdropAmount),
-        provider.connection.requestAirdrop(player3.publicKey, airdropAmount),
-        provider.connection.requestAirdrop(player4.publicKey, airdropAmount),
-        provider.connection.requestAirdrop(targetWallet, airdropAmount),
-        provider.connection.requestAirdrop(targetWallet2, airdropAmount),
-        provider.connection.requestAirdrop(targetWallet3, airdropAmount),
-        provider.connection.requestAirdrop(targetWallet4, airdropAmount),
-      ];
-      await Promise.all(airdropPromises);
+      // Skip airdrops if devnetOnly flag is set
+      if (!devnetOnly) {
+        // Airdrop SOL to admin and players (increased amount to 10 SOL)
+        const airdropAmount = 10 * anchor.web3.LAMPORTS_PER_SOL;
+        const airdropPromises = [
+          provider.connection.requestAirdrop(admin.publicKey, airdropAmount),
+          provider.connection.requestAirdrop(player1.publicKey, airdropAmount),
+          provider.connection.requestAirdrop(player2.publicKey, airdropAmount),
+          provider.connection.requestAirdrop(player3.publicKey, airdropAmount),
+          provider.connection.requestAirdrop(player4.publicKey, airdropAmount),
+          provider.connection.requestAirdrop(targetWallet1, airdropAmount),
+          provider.connection.requestAirdrop(targetWallet2, airdropAmount),
+          provider.connection.requestAirdrop(targetWallet3, airdropAmount),
+          provider.connection.requestAirdrop(targetWallet4, airdropAmount),
+        ];
+        await Promise.all(airdropPromises);
 
-      // Wait for airdrops to confirm
-      await new Promise(resolve => setTimeout(resolve, 2000));
+        // Wait for airdrops to confirm
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      } else {
+        console.log("⚠️  devnetOnly mode: Skipping airdrops");
+        
+        // Transfer 0.25 SOL to target wallets from admin account
+        const transferAmount = 0.25 * anchor.web3.LAMPORTS_PER_SOL;
+        
+        console.log(`\n💸 Transferring 0.25 SOL to target wallets from admin (${admin.publicKey.toBase58()})...`);
+        
+        const transferPromises = [
+          targetWallet1,
+          targetWallet2,
+          targetWallet3,
+          targetWallet4,
+        ].map(async (targetWallet) => {
+          try {
+            const transaction = new Transaction().add(
+              SystemProgram.transfer({
+                fromPubkey: admin.publicKey,
+                toPubkey: targetWallet,
+                lamports: transferAmount,
+              })
+            );
+            
+            const { blockhash } = await provider.connection.getLatestBlockhash();
+            transaction.recentBlockhash = blockhash;
+            transaction.feePayer = admin.publicKey;
+            transaction.sign(admin);
+            
+            const signature = await provider.connection.sendRawTransaction(transaction.serialize());
+            await provider.connection.confirmTransaction(signature);
+            console.log(`  ✓ Transferred 0.25 SOL to ${targetWallet.toBase58()}`);
+            return signature;
+          } catch (error) {
+            console.error(`  ✗ Failed to transfer to ${targetWallet.toBase58()}:`, error);
+            throw error;
+          }
+        });
+        
+        await Promise.all(transferPromises);
+        console.log("✓ All transfers completed\n");
+      }
 
       // Find PDAs
       [platformPDA] = PublicKey.findProgramAddressSync(
         [Buffer.from("platform")],
         PROGRAM_ID
       );
+
     } catch (error) {
       console.error("Error in before hook:", error);
       throw error;
     }
+  });
+
+  // Add 30 second delay after each test to avoid rate limiting
+  afterEach(async function() {
+    const testName = this.currentTest?.title || "test";
+    console.log(`\n⏳ Waiting 30 seconds after "${testName}" to avoid RPC rate limiting...`);
+    await new Promise(resolve => setTimeout(resolve, 30000));
+    console.log("✓ Wait complete, proceeding to next test...\n");
   });
 
   it("Create Platform", async () => {
@@ -138,7 +213,7 @@ describe("hexone", () => {
     }
   });
 
-  it("Create Game", async () => {
+  (devnetOnly ? it.skip : it)("Create Game", async () => {
     try {
       // Get platform account to get game count
       const platform = await program.account.platform.fetch(platformPDA);
@@ -207,7 +282,7 @@ describe("hexone", () => {
     }
   });
 
-  it("Create Players", async () => {
+  (devnetOnly ? it.skip : it)("Create Players", async () => {
     try {
       // Helper function to create a player
       const createPlayer = async (
@@ -295,7 +370,7 @@ describe("hexone", () => {
     }
   });
 
-  it("Hotwallet Signing Test", async () => {
+  (devnetOnly ? it.skip : it)("Hotwallet Signing Test", async () => {
     try {
       // First, create a game and join players so we can test game actions
       const [testGamePDA] = PublicKey.findProgramAddressSync(
@@ -491,7 +566,7 @@ describe("hexone", () => {
     }
   });
 
-  it("Join Game", async () => {
+  (devnetOnly ? it.skip : it)("Join Game", async () => {
     try {
       // Derive game treasury PDA
       const [gameTreasuryPDA] = PublicKey.findProgramAddressSync(
@@ -563,7 +638,7 @@ describe("hexone", () => {
     }
   });
 
-  it("Move Resources - Player 1 moves all resources from (0,0) to (11,0)", async () => {
+  (devnetOnly ? it.skip : it)("Move Resources - Player 1 moves all resources from (0,0) to (11,0)", async () => {
     try {
       let gameAccount = await program.account.game.fetch(gamePDA);
       
@@ -632,7 +707,7 @@ describe("hexone", () => {
     }
   });
 
-  it("Attack 3 Times in Sequence - Player 1 (Red) attacks Player 2 (Yellow)", async () => {
+  (devnetOnly ? it.skip : it)("Attack 3 Times in Sequence - Player 1 (Red) attacks Player 2 (Yellow)", async () => {
     try {
       // Red is at tile 11 (row 0, col 11) = (11, 0) from previous test
       // Yellow is at tile 12 (row 0, col 12) = (12, 0)
@@ -854,7 +929,7 @@ describe("hexone", () => {
     }
   });
 
-  it("Player 3 (Green) moves to center tile", async () => {
+  (devnetOnly ? it.skip : it)("Player 3 (Green) moves to center tile", async () => {
     try {
       // Center tile is at row 5, col 6 (0-indexed)
       // Tile index = row * columns + column = 5 * 13 + 6 = 71
@@ -969,7 +1044,7 @@ describe("hexone", () => {
     }
   });
 
-  it("Add Resources - Wait 60s and add resources to starting tiles for each player", async () => {
+  (devnetOnly ? it.skip : it)("Add Resources - Wait 60s and add resources to starting tiles for each player", async () => {
     try {
       // Get initial game state
       let gameAccount = await program.account.game.fetch(gamePDA);
