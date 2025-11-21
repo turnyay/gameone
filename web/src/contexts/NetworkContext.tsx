@@ -26,7 +26,7 @@ const DEFAULT_RPC_URLS = {
 export const NetworkProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [network, setNetworkState] = useState<Network>(() => {
     const saved = localStorage.getItem('solana-network');
-    return (saved as Network) || 'localnet';
+    return (saved as Network) || 'devnet';
   });
 
   const [rpcUrls, setRpcUrlsState] = useState(() => {
